@@ -150,7 +150,8 @@ class Command(NoArgsCommand):
                              lucene.Field.Store.NO,
                              lucene_tokenized))
 	if request.changenum:
-	     doc.add(lucene.Field('changenum', unicode(request.changenum), 
+	    doc.add(lucene.Field('changenum',
+                             unicode(request.changenum),
                              lucene.Field.Store.NO,
                              lucene_tokenized))
         # Remove commas, since lucene won't tokenize it right with them
