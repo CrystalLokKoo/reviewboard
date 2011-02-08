@@ -4399,6 +4399,68 @@ class ReviewRequestResource(WebAPIResource):
 
 review_request_resource = ReviewRequestResource()
 
+class SearchResource(WebAPIResource, DjbletsUserResource):
+    """Information for search.
+
+    """
+    name = 'search'
+    singleton = True
+
+    @webapi_check_local_site
+    @webapi_check_login_required
+    def get(self, request, *args, **kwargs):
+        """Returns information on users, groups and review requests.
+
+        """
+        search_q = request.GET.get('q', None)
+        query = User.objects.filter(is_active=True)
+        
+        if search_q:
+            q = Q(username__istartswith=search_q)
+
+            if request.GET.get('fullname', None):
+                q = q | (Q(first_name__istartswith=search_q) |
+                         Q(last_name__istartswith=search_q))
+
+            query = query.filter(q)
+                        
+        search_q2 = request.GET.get('q', None)
+        local_site_name = None
+        local_site = _get_local_site(local_site_name)
+        query_group = Group.objects.filter(local_site=local_site)
+
+        if search_q2:
+            q2 = Q(name__istartswith=search_q2)
+
+            if request.GET.get('displayname', None):
+                q2 = q2 | Q(display_name__istartswith=search_q2)
+
+            query_group = query_group.filter(q2)
+
+        search_q3 = request.GET.get('q', None)
+        query_review_request = ReviewRequest.objects.filter(local_site=local_site)
+
+        if search_q3:
+            q3 = Q(id__istartswith=search_q3)
+
+            if request.GET.get('id', None):
+                q3 = q3 | Q(id__istartswith=search_q3) 
+
+            query_review_request = query_review_request.filter(q3)
+        
+        
+        data = {
+            'Users': query,
+            'Groups': query_group,
+            'ID': query_review_request,
+        }
+
+        return 200, {
+            self.name: data,
+        }
+   
+search_resource = SearchResource()
+   
 
 class ServerInfoResource(WebAPIResource):
     """Information on the Review Board server.
@@ -4438,8 +4500,7 @@ class ServerInfoResource(WebAPIResource):
         }
 
 server_info_resource = ServerInfoResource()
-
-
+        	
 class SessionResource(WebAPIResource):
     """Information on the active user's session.
 
@@ -4511,6 +4572,7 @@ class RootResource(DjbletsRootResource):
             repository_resource,
             review_group_resource,
             review_request_resource,
+            search_resource,
             server_info_resource,
             session_resource,
             user_resource,
