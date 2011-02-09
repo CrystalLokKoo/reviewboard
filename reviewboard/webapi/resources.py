@@ -4499,7 +4499,7 @@ class ServerInfoResource(WebAPIResource):
         }
 
 server_info_resource = ServerInfoResource()
-        	
+
 class SessionResource(WebAPIResource):
     """Information on the active user's session.
 
