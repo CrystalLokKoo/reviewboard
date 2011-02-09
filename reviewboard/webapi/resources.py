@@ -4423,7 +4423,7 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
                          Q(last_name__istartswith=search_q))
 
             query = query.filter(q)
-   
+
         search_q2 = request.GET.get('q', None)
         local_site_name = None
         local_site = _get_local_site(local_site_name)
