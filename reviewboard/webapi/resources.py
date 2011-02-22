@@ -4462,8 +4462,12 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
 search_resource = SearchResource()
 
 class SearchResource(WebAPIResource, DjbletsUserResource):
-    """Information for search.
-
+    """Information on users, groups and review requests.
+        This is the resource for the autocomplete widget in 
+        common.js. This resource help filters for:
+        users: username, first_name, last_name
+        groups: name, display_name
+        review request: ID, summary
     """
     name = 'search'
     singleton = True
@@ -4472,53 +4476,53 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
     @webapi_check_login_required
     def get(self, request, *args, **kwargs):
         """Returns information on users, groups and review requests.
-
         """
         search_q = request.GET.get('q', None)
         query = User.objects.filter(is_active=True)
 
         if search_q:
-            q = Q(username__istartswith=search_q)
+            q = (Q(username__istartswith=search_q) |
+                 Q(first_name__istartswith=search_q) |
+                 Q(last_name__istartswith=search_q))
 
             if request.GET.get('fullname', None):
                 q = q | (Q(first_name__istartswith=search_q) |
                          Q(last_name__istartswith=search_q))
-
+           
             query = query.filter(q)
 
-        search_q2 = request.GET.get('q', None)
+        search_q = request.GET.get('q', None)
         local_site_name = None
         local_site = _get_local_site(local_site_name)
         query_group = Group.objects.filter(local_site=local_site)
 
-        if search_q2:
-            q2 = Q(name__istartswith=search_q2)
+        if search_q:
+            q2 = (Q(name__istartswith=search_q) |
+                  Q(display_name__istartswith=search_q))
 
             if request.GET.get('displayname', None):
-                q2 = q2 | Q(display_name__istartswith=search_q2)
+                q2 = q2 | Q(display_name__istartswith=search_q)
 
             query_group = query_group.filter(q2)
 
-        search_q3 = request.GET.get('q', None)
-        query_review_request = ReviewRequest.objects.filter(local_site=local_site)
+        search_q = request.GET.get('q', None)
+        query_review_requests = ReviewRequest.objects.filter(local_site=local_site)
 
-        if search_q3:
-            q3 = Q(id__istartswith=search_q3)
+        if search_q:
+            q3 = (Q(id__istartswith=search_q) |
+                  Q(summary__icontains=search_q))
 
             if request.GET.get('id', None):
-                q3 = q3 | Q(id__istartswith=search_q3)
+                q3 = q3 | Q(id__istartswith=search_q)
 
-            query_review_request = query_review_request.filter(q3)
-
-
-        data = {
-            'Users': query,
-            'Groups': query_group,
-            'ID': query_review_request,
-        }
+            query_review_requests = query_review_requests.filter(q3)
 
         return 200, {
-            self.name: data,
+            self.name: {
+            'users': query,
+            'groups': query_group,
+            'review_requests': query_review_requests,
+            },
         }
 
 search_resource = SearchResource()
