@@ -253,7 +253,7 @@ $.fn.searchAutoComplete = function() {
                     {
                         s = data["summary"];
                         s += " <span>(" + data["id"] + ")</span>";
-                    }        
+                    }
 
                     return s;
                 },
