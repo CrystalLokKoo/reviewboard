@@ -233,11 +233,86 @@ $.fn.toggleStar = function(type, objid, default_) {
     });
 };
 
+$.fn.searchAutoComplete = function() {
+        $("#search_field")
+            .autocomplete({
+                formatItem: function(data) {
+                    var s;
+                    if (data["username"])
+                    {
+                        s = data["username"];
+                        s += " <span>(" + data["fullname"] + ")</span>";
+                    }
+                    if (data["name"])
+                    {
+                        s = data["name"];
+                        s += " <span>(" + data["display_name"] + ")</span>";
+                    }
+                    
+                    if (data["summary"])
+                    {
+                        s = data["summary"];
+                        s += " <span>(" + data["id"] + ")</span>";
+                    }        
+                   
+                    return s;
+                },
+                matchCase: false,
+                multiple: true,
+                parse: function(data) {
+                    var jsonData = eval("(" + data + ")");
+                    var jsonDataSearch = jsonData["search"];
+                    var parsed = [];
+                    
+                    var objects = new Array();
+                    objects[0] = "users";
+                    objects[1] = "groups";
+                    objects[2] = "review_requests";
+                    
+                    var values = new Array();
+                    values[0] = "username";
+                    values[1] = "name";
+                    values[2] = "summary";
+                    
+                    var items;
+                    
+                    for (var j = 0; j < objects.length; j++){
+                        items = jsonDataSearch[(objects[j])];
+                        
+                        for (var i = 0; i < items.length; i++) {
+                            var value = items[i];
+
+                            parsed.push({
+                                data: value,
+                                value: value[values[j]],
+                                result: value[values[j]]
+                            });
+                        }
+                    }
+                   
+                    return parsed;
+                },
+                url: SITE_ROOT + "api/" + "search" + "/",
+                
+        })
+    
+};
+
+
 $(document).ready(function() {
     $('<div id="activity-indicator" />')
         .text("Loading...")
         .hide()
         .appendTo("body");
+    
+    var searchGroupsEl = $("#search_field");
+    console.log($("#search_field"));
+   
+    if (searchGroupsEl.length > 0) {
+        searchGroupsEl
+            .searchAutoComplete();
+    }
+            
 });
 
 // vim: set et:sw=4:
