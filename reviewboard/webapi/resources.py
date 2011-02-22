@@ -4431,6 +4431,7 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
             query = query.filter(q)
 
         search_q = request.GET.get('q', None)
+
         local_site_name = None
         local_site = _get_local_site(local_site_name)
         query_group = Group.objects.filter(local_site=local_site)
@@ -4456,6 +4457,12 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
 
             query_review_requests = query_review_requests.filter(q3)
 
+        data = {
+            'Users': query,
+            'Groups': query_group,
+            'ID': query_review_request,
+        }
+
         return 200, {
             self.name: {
             'users': query,
@@ -4466,11 +4473,6 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
 
 search_resource = SearchResource()
 
-=======
-   
-search_resource = SearchResource()
-   
->>>>>>> ac5314a... Working on SearchResource
 
 class ServerInfoResource(WebAPIResource):
     """Information on the Review Board server.
@@ -4510,11 +4512,7 @@ class ServerInfoResource(WebAPIResource):
         }
 
 server_info_resource = ServerInfoResource()
-<<<<<<< HEAD
 
-=======
-        	
->>>>>>> ac5314a... Working on SearchResource
 class SessionResource(WebAPIResource):
     """Information on the active user's session.
 
