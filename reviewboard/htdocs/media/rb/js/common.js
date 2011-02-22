@@ -248,13 +248,13 @@ $.fn.searchAutoComplete = function() {
                         s = data["name"];
                         s += " <span>(" + data["display_name"] + ")</span>";
                     }
-                    
+
                     if (data["summary"])
                     {
                         s = data["summary"];
                         s += " <span>(" + data["id"] + ")</span>";
                     }        
-                   
+
                     return s;
                 },
                 matchCase: false,
@@ -263,22 +263,22 @@ $.fn.searchAutoComplete = function() {
                     var jsonData = eval("(" + data + ")");
                     var jsonDataSearch = jsonData["search"];
                     var parsed = [];
-                    
+
                     var objects = new Array();
                     objects[0] = "users";
                     objects[1] = "groups";
                     objects[2] = "review_requests";
-                    
+
                     var values = new Array();
                     values[0] = "username";
                     values[1] = "name";
                     values[2] = "summary";
-                    
+
                     var items;
-                    
+
                     for (var j = 0; j < objects.length; j++){
                         items = jsonDataSearch[(objects[j])];
-                        
+
                         for (var i = 0; i < items.length; i++) {
                             var value = items[i];
 
@@ -289,13 +289,13 @@ $.fn.searchAutoComplete = function() {
                             });
                         }
                     }
-                   
+
                     return parsed;
                 },
                 url: SITE_ROOT + "api/" + "search" + "/",
-                
+
         })
-    
+
 };
 
 
@@ -304,15 +304,15 @@ $(document).ready(function() {
         .text("Loading...")
         .hide()
         .appendTo("body");
-    
+
     var searchGroupsEl = $("#search_field");
     console.log($("#search_field"));
-   
+
     if (searchGroupsEl.length > 0) {
         searchGroupsEl
             .searchAutoComplete();
     }
-            
+
 });
 
 // vim: set et:sw=4:
