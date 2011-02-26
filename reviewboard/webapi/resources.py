@@ -4414,8 +4414,10 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
     @webapi_check_local_site
     @webapi_check_login_required
     def get(self, request, *args, **kwargs):
-        """Returns information on users, groups and review requests.
+        """Returns information on users, groups
+        and review requests.
         """
+        
         search_q = request.GET.get('q', None)
         query = User.objects.filter(is_active=True)
 
@@ -4456,12 +4458,6 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
                 q3 = q3 | Q(id__istartswith=search_q)
 
             query_review_requests = query_review_requests.filter(q3)
-
-        data = {
-            'Users': query,
-            'Groups': query_group,
-            'ID': query_review_request,
-        }
 
         return 200, {
             self.name: {
