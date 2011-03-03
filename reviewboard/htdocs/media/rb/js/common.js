@@ -240,8 +240,9 @@ $.fn.searchAutoComplete = function() {
                     var s;
                     if (data["username"])
                     {
-                        s = data["username"];
-                        s += " <span>(" + data["fullname"] + ")</span>";
+                        //s = "<a href =\"" + data["url"] + "\">" + data["username"] + "</a>";
+                        //s += " <span>(" + data["fullname"] + ")</span>";
+                        s = data["url"];
                     }
                     if (data["name"])
                     {
@@ -293,9 +294,33 @@ $.fn.searchAutoComplete = function() {
                     return parsed;
                 },
                 url: SITE_ROOT + "api/" + "search" + "/",
+                highlight: function(formatted, term) {
+                    var s = "<div>" + "</div>";
+                    return $(s)
+                        .html($.ui.autocomplete.defaults.highlight(formatted, term))
+                        .click(function() {
+                            alert('hi');
+                            window.open(formatted, self);
+                            return false;
+                        });
+                },
 
         })
+         .bind("autocompleteshow", function() {
+                /*
+                 * Add the footer to the bottom of the results pane the
+                 * first time it's created.
+                 */
+                var resultsPane = $(".ui-autocomplete-results");
 
+                if ($(".ui-autocomplete-footer", resultsPane).length == 0) {
+                    $("<div/>")
+                        .addClass("ui-autocomplete-footer")
+                        .text("Press Tab to auto-complete.")
+                        .appendTo(resultsPane);
+                }
+        });
+       
 };
 
 
@@ -306,7 +331,6 @@ $(document).ready(function() {
         .appendTo("body");
 
     var searchGroupsEl = $("#search_field");
-    console.log($("#search_field"));
 
     if (searchGroupsEl.length > 0) {
         searchGroupsEl
