@@ -240,9 +240,8 @@ $.fn.searchAutoComplete = function() {
                     var s;
                     if (data["username"])
                     {
-                        //s = "<a href =\"" + data["url"] + "\">" + data["username"] + "</a>";
-                        //s += " <span>(" + data["fullname"] + ")</span>";
-                        s = data["url"];
+                        s = data["username"];
+                        s += " <span>(" + data["fullname"] + ")</span>";
                     }
                     if (data["name"])
                     {
@@ -260,6 +259,7 @@ $.fn.searchAutoComplete = function() {
                 },
                 matchCase: false,
                 multiple: true,
+                clickURLChange: true,
                 parse: function(data) {
                     var jsonData = eval("(" + data + ")");
                     var jsonDataSearch = jsonData["search"];
@@ -294,17 +294,6 @@ $.fn.searchAutoComplete = function() {
                     return parsed;
                 },
                 url: SITE_ROOT + "api/" + "search" + "/",
-                highlight: function(formatted, term) {
-                    var s = "<div>" + "</div>";
-                    return $(s)
-                        .html($.ui.autocomplete.defaults.highlight(formatted, term))
-                        .click(function() {
-                            alert('hi');
-                            window.open(formatted, self);
-                            return false;
-                        });
-                },
-
         })
          .bind("autocompleteshow", function() {
                 /*
