@@ -427,7 +427,8 @@ $.extend($.ui.autocomplete, {
 			return value.replace(new RegExp("(?![^&;]+;)(?!<[^<>]*)(" + term.replace(/([\^\$\(\)\[\]\{\}\*\.\+\?\|\\])/gi, "\\$1") + ")(?![^<>]*>)(?![^&;]+;)", "gi"), "<strong>$1</strong>");
 		},
 		scroll: true,
-		scrollHeight: 180
+		scrollHeight: 180,
+        clickURLChange: false,
 	}
 });
 
@@ -654,6 +655,24 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 			? options.max
 			: available;
 	}
+    
+    function makeItem(data)
+    {
+        if(data["summary"] != null) //for review requests
+        {
+            return $("<li/>")
+                .click(function(){
+                    window.open(SITE_ROOT + "r/" + data["id"]);
+                });
+        }
+        else //for groups and users
+        {
+            return $("<li/>")
+                .click(function(){
+                    window.open(data["url"]);
+                });
+        }
+    }
 
 	function fillList() {
 		list.empty();
@@ -664,8 +683,11 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 			var formatted = options.formatItem(data[i].data, i+1, max, data[i].value, term);
 			if ( formatted === false )
 				continue;
-			var li = $("<li/>").html( options.highlight(formatted, term) ).addClass(i%2 == 0 ? "ui-autocomplete-even" : "ui-autocomplete-odd").appendTo(list)[0];
-			$.data(li, "ui-autocomplete-data", data[i]);
+            if (options.clickURLChange === false)
+                var li = $("<li/>").html( options.highlight(formatted, term) ).addClass(i%2 == 0 ? "ui-autocomplete-even" : "ui-autocomplete-odd").appendTo(list)[0];
+			else
+                var li = makeItem(data[i].data).html( options.highlight(formatted, term) ).addClass(i%2 == 0 ? "ui-autocomplete-even" : "ui-autocomplete-odd").appendTo(list)[0];
+            $.data(li, "ui-autocomplete-data", data[i]);
 		}
 		listItems = list.find("li");
 		if ( options.selectFirst ) {
