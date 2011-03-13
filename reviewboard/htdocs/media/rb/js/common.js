@@ -233,6 +233,12 @@ $.fn.toggleStar = function(type, objid, default_) {
     });
 };
 
+/*
+ * The wrapper function of autocomplete for the search field.
+ * Currently, quick search searches for users, groups, and review 
+ * requests through the usage of search resource.
+ *
+ * */
 $.fn.searchAutoComplete = function() {
         $("#search_field")
             .autocomplete({
