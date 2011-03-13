@@ -4420,9 +4420,9 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
 
         return 200, {
             self.name: {
-            'users': get_users_query(self, request, *args, **kwargs),
-            'groups': get_groups_query(self, request, *args, **kwargs),
-            'review_requests': get_reviews_query(self, request, *args, **kwargs),
+            'users': self.get_users_query(self, request, *args, **kwargs),
+            'groups': self.get_groups_query(self, request, *args, **kwargs),
+            'review_requests': self.get_reviews_query(self, request, *args, **kwargs),
             },
         }
 
