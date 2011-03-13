@@ -4417,7 +4417,16 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
         """Returns information on users, groups
         and review requests.
         """
-        
+
+        return 200, {
+            self.name: {
+            'users': get_users_query(self, request, *args, **kwargs),
+            'groups': get_groups_query(self, request, *args, **kwargs),
+            'review_requests': get_reviews_query(self, request, *args, **kwargs),
+            },
+        }
+
+    def get_users_query(self, request, *args, **kwargs):
         search_q = request.GET.get('q', None)
         query = User.objects.filter(is_active=True)
 
@@ -4429,11 +4438,11 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
             if request.GET.get('fullname', None):
                 q = q | (Q(first_name__istartswith=search_q) |
                          Q(last_name__istartswith=search_q))
-           
+
             query = query.filter(q)
+        return query
 
-        search_q = request.GET.get('q', None)
-
+    def get_groups_query(self, request, *args, **kwargs):
         local_site_name = None
         local_site = _get_local_site(local_site_name)
         query_group = Group.objects.filter(local_site=local_site)
@@ -4446,7 +4455,9 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
                 q2 = q2 | Q(display_name__istartswith=search_q)
 
             query_group = query_group.filter(q2)
+        return query_group
 
+    def get_reviews_query(self, request, *args, **kwargs):
         search_q = request.GET.get('q', None)
         query_review_requests = ReviewRequest.objects.filter(local_site=local_site)
 
@@ -4458,14 +4469,7 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
                 q3 = q3 | Q(id__istartswith=search_q)
 
             query_review_requests = query_review_requests.filter(q3)
-
-        return 200, {
-            self.name: {
-            'users': query,
-            'groups': query_group,
-            'review_requests': query_review_requests,
-            },
-        }
+        return query_review_requests
 
 search_resource = SearchResource()
 
