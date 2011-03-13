@@ -300,9 +300,10 @@ $.fn.searchAutoComplete = function() {
                  * Add the footer to the bottom of the results pane the
                  * first time it's created.
                  */
-                var resultsPane = $(".ui-autocomplete-results");
+                var resultsPane = $(".ui-autocomplete-results:not(" +
+                                    ":has(.ui-autocomplete-footer))");
 
-                if ($(".ui-autocomplete-footer", resultsPane).length == 0) {
+                if (resultsPane.length > 0) {
                     $("<div/>")
                         .addClass("ui-autocomplete-footer")
                         .text("Press Tab to auto-complete.")
@@ -325,6 +326,26 @@ $(document).ready(function() {
         searchGroupsEl
             .searchAutoComplete();
     }
+
+    $('#submitter, .reviewer a').hover(
+        function() {
+            var infobox = $(this).find(".user-infobox");
+
+            if (infobox.length > 0) {
+                infobox.show();
+            } else {
+                infobox = $(this).append(
+                   $("<div class='user-infobox loading'/>")
+                       .load($(this).attr('href') + "infobox/",
+                             function(responseText, textStatus) {
+                                 infobox.removeClass("loading");
+                             }));
+            }
+        },
+        function() {
+            $(this).find(".user-infobox").hide();
+        }
+    );
 
 });
 
