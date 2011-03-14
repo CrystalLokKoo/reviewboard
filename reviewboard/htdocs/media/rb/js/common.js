@@ -288,7 +288,7 @@ $.fn.searchAutoComplete = function() {
 
                         for (var i = 0; i < items.length; i++) {
                             var value = items[i];
-                            
+
                             if (j!=2)
                             {
                                 parsed.push({
@@ -306,7 +306,7 @@ $.fn.searchAutoComplete = function() {
                                 result: value[values[j]]
                             });
                             }
-                            
+
                         }
                     }
 
@@ -329,7 +329,6 @@ $.fn.searchAutoComplete = function() {
                         .appendTo(resultsPane);
                 }
         });
-       
 };
 
 
