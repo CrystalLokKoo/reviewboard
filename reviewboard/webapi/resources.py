@@ -4401,12 +4401,10 @@ review_request_resource = ReviewRequestResource()
 
 
 class SearchResource(WebAPIResource, DjbletsUserResource):
-    """Information on users, groups and review requests.
-        This is the resource for the autocomplete widget in 
-        common.js. This resource help filters for:
-        users: username, first_name, last_name
-        groups: name, display_name
-        review request: ID, summary
+    """Provides information on users, groups and review requests.
+        This is the resource for the autocomplete widget for
+        quick search. This resource help filters for
+        users, groups and review requests.
     """
     name = 'search'
     singleton = True
