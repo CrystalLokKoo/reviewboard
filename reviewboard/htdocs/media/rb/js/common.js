@@ -288,12 +288,25 @@ $.fn.searchAutoComplete = function() {
 
                         for (var i = 0; i < items.length; i++) {
                             var value = items[i];
-
-                            parsed.push({
+                            
+                            if (j!=2)
+                            {
+                                parsed.push({
+                                data: value,
+                                value: value[values[j]],
+                                result: value[values[j]]
+                                });
+                            } 
+                            //only show review requests that are public
+                            else if (value["public"] == 1)
+                            {
+                                parsed.push({
                                 data: value,
                                 value: value[values[j]],
                                 result: value[values[j]]
                             });
+                            }
+                            
                         }
                     }
 
