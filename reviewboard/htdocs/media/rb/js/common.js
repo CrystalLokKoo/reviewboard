@@ -235,7 +235,7 @@ $.fn.toggleStar = function(type, objid, default_) {
 
 /*
  * The wrapper function of autocomplete for the search field.
- * Currently, quick search searches for users, groups, and review 
+ * Currently, quick search searches for users, groups, and review
  * requests through the usage of search resource.
  *
  * */
@@ -296,7 +296,7 @@ $.fn.searchAutoComplete = function() {
                                 value: value[values[j]],
                                 result: value[values[j]]
                                 });
-                            } 
+                            }
                             //only show review requests that are public
                             else if (value["public"] == 1)
                             {

@@ -655,7 +655,7 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 			? options.max
 			: available;
 	}
-    
+
     function makeItem(data)
     {
         if(data["summary"] != null) //for review requests
