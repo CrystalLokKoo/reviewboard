@@ -4812,10 +4812,12 @@ review_request_resource = ReviewRequestResource()
 
 
 class SearchResource(WebAPIResource, DjbletsUserResource):
-    """Provides information on users, groups and review requests.
-        This is the resource for the autocomplete widget for
-        quick search. This resource help filters for
-        users, groups and review requests.
+    """
+    Provides information on users, groups and review requests.
+
+    This is the resource for the autocomplete widget for
+    quick search. This resource help filters for
+    users, groups and review requests.
     """
     name = 'search'
     singleton = True
@@ -4823,8 +4825,8 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
     @webapi_check_local_site
     @webapi_check_login_required
     def get(self, request, *args, **kwargs):
-        """Returns information on users, groups
-        and review requests.
+        
+        """Returns information on users, groups and review requests.
         """
         search_q = request.GET.get('q', None)
         query = User.objects.filter(is_active=True)
@@ -4915,6 +4917,7 @@ class ServerInfoResource(WebAPIResource):
         }
 
 server_info_resource = ServerInfoResource()
+
 
 class SessionResource(WebAPIResource):
     """Information on the active user's session.
