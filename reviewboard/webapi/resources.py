@@ -4825,7 +4825,7 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
     @webapi_check_local_site
     @webapi_check_login_required
     def get(self, request, *args, **kwargs):
-        
+
         """Returns information on users, groups and review requests.
         """
         search_q = request.GET.get('q', None)
