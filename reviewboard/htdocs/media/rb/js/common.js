@@ -266,7 +266,7 @@ $.fn.searchAutoComplete = function() {
                 matchCase: false,
                 multiple: true,
                 clickURLChange: true,
-                parse: function(data) {
+                parse: function( data ) {
                     var jsonData = eval("(" + data + ")");
                     var jsonDataSearch = jsonData["search"];
                     var parsed = [];
@@ -297,7 +297,7 @@ $.fn.searchAutoComplete = function() {
                                 result: value[values[j]]
                                 });
                             }
-                            //only show review requests that are public
+                            // Only show review requests that are public
                             else if (value["public"] == 1)
                             {
                                 parsed.push({
@@ -364,7 +364,6 @@ $(document).ready(function() {
             $(this).find(".user-infobox").hide();
         }
     );
-
 });
 
 // vim: set et:sw=4:

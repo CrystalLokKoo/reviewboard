@@ -658,14 +658,14 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 
     function makeItem(data)
     {
-        if(data["summary"] != null) //for review requests
+        if (data["summary"] != null) // For review requests
         {
             return $("<li/>")
                 .click(function(){
                     window.open(SITE_ROOT + "r/" + data["id"]);
                 });
         }
-        else //for groups and users
+        else //For groups and users
         {
             return $("<li/>")
                 .click(function(){

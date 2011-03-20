@@ -484,6 +484,7 @@ form table td.label {
  * Auto-complete widget
  ****************************************************************************/
 /* Content container wrapper */
+
 .ui-autocomplete-results
 {
   background: #ffffff;
@@ -523,22 +524,14 @@ form table td.label {
   right: 6px;
 }
 
-/* Pre-highlighted result item */
-/*
-.ui-autocomplete-results .ui-autocomplete-over
-{
-  background: #9cc2eb;
-}
-*/
-
 /* Highlighted result item */
 .ui-autocomplete-results .ui-autocomplete-over
 {
   background: #71a5db;
   color: #FFF;
 }
-
- /* User page hover
+/****************************************************************************
+ * User page hover
  ****************************************************************************/
 
 .user-infobox {
