@@ -658,17 +658,12 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 
     function makeItem(data)
     {
-        if (data["summary"] != null) // For review requests
-        {
-            return $("<li/>")
-                .click(function(){
-                    window.open(SITE_ROOT + "r/" + data["id"]);
-                });
+        if (options.clickURLChange === false) {
+            return $("<li/>");
         }
-        else //For groups and users
-        {
-            return $("<li/>")
-                .click(function(){
+        else {
+            //For Quick Search
+            return $("<li/>").click(function() {
                     window.open(data["url"]);
                 });
         }
@@ -683,10 +678,8 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 			var formatted = options.formatItem(data[i].data, i+1, max, data[i].value, term);
 			if ( formatted === false )
 				continue;
-            if (options.clickURLChange === false)
-                var li = $("<li/>").html( options.highlight(formatted, term) ).addClass(i%2 == 0 ? "ui-autocomplete-even" : "ui-autocomplete-odd").appendTo(list)[0];
-			else
-                var li = makeItem(data[i].data).html( options.highlight(formatted, term) ).addClass(i%2 == 0 ? "ui-autocomplete-even" : "ui-autocomplete-odd").appendTo(list)[0];
+
+            var li = makeItem(data[i].data).html( options.highlight(formatted, term) ).addClass(i%2 == 0 ? "ui-autocomplete-even" : "ui-autocomplete-odd").appendTo(list)[0];
             $.data(li, "ui-autocomplete-data", data[i]);
 		}
 		listItems = list.find("li");

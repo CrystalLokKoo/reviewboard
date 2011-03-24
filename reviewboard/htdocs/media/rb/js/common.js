@@ -237,98 +237,95 @@ $.fn.toggleStar = function(type, objid, default_) {
  * The wrapper function of autocomplete for the search field.
  * Currently, quick search searches for users, groups, and review
  * requests through the usage of search resource.
- *
- * */
+ */
 $.fn.searchAutoComplete = function() {
-        $("#search_field")
-            .autocomplete({
-                formatItem: function(data) {
-                    var s;
-                    if (data["username"])
-                    {
-                        s = data["username"];
-                        s += " <span>(" + data["fullname"] + ")</span>";
-                    }
-                    if (data["name"])
-                    {
-                        s = data["name"];
-                        s += " <span>(" + data["display_name"] + ")</span>";
-                    }
+    $("#search_field")
+        .autocomplete({
+            formatItem: function(data) {
+                var s;
 
-                    if (data["summary"])
-                    {
-                        s = data["summary"];
-                        s += " <span>(" + data["id"] + ")</span>";
-                    }
+                if (data.username) {
+                    //For the format of users
+                    s = data.username;
+                    s += " <span>(" + data.fullname + ")</span>";
+                }
 
-                    return s;
-                },
-                matchCase: false,
-                multiple: true,
-                clickURLChange: true,
-                parse: function( data ) {
-                    var jsonData = eval("(" + data + ")");
-                    var jsonDataSearch = jsonData["search"];
-                    var parsed = [];
 
-                    var objects = new Array();
-                    objects[0] = "users";
-                    objects[1] = "groups";
-                    objects[2] = "review_requests";
+                else if (data.name) {
+                    //For the format of groups
+                    s = data.name;
+                    s += " <span>(" + data.display_name + ")</span>";
+                }
 
-                    var values = new Array();
-                    values[0] = "username";
-                    values[1] = "name";
-                    values[2] = "summary";
 
-                    var items;
+                else if (data.summary) {
+                    //For the format of review requests
+                    s = data.summary;
+                    s += " <span>(" + data.id + ")</span>";
+                }
 
-                    for (var j = 0; j < objects.length; j++){
-                        items = jsonDataSearch[(objects[j])];
+                return s;
+            },
+            matchCase: false,
+            multiple: true,
+            clickURLChange: true,
+            parse: function(data) {
+                var jsonData = JSON.parse(data);
+                var jsonDataSearch = jsonData.search;
+                var parsed = [];
 
-                        for (var i = 0; i < items.length; i++) {
-                            var value = items[i];
+                var objects = ["users", "groups", "review_requests"];
 
-                            if (j!=2)
-                            {
-                                parsed.push({
-                                data: value,
-                                value: value[values[j]],
-                                result: value[values[j]]
-                                });
-                            }
-                            // Only show review requests that are public
-                            else if (value["public"] == 1)
-                            {
-                                parsed.push({
+                var values = ["username", "name", "summary"];
+
+                var items;
+
+                for (var j = 0; j < objects.length; j++) {
+                    items = jsonDataSearch[objects[j]];
+
+                    for (var i = 0; i < items.length; i++) {
+                        var value = items[i];
+
+                        if (j != 2) {
+                            parsed.push({
                                 data: value,
                                 value: value[values[j]],
                                 result: value[values[j]]
                             });
-                            }
-
                         }
+                        
+                        else if (value.public) {
+                            // Only show review requests that are public
+                            value.url = SITE_ROOT + "r/" + value.id;
+                            parsed.push({
+                                data: value,
+                                value: value[values[j]],
+                                result: value[values[j]]
+                            });
+                        }
+
                     }
-
-                    return parsed;
-                },
-                url: SITE_ROOT + "api/" + "search" + "/",
-        })
-         .bind("autocompleteshow", function() {
-                /*
-                 * Add the footer to the bottom of the results pane the
-                 * first time it's created.
-                 */
-                var resultsPane = $(".ui-autocomplete-results:not(" +
-                                    ":has(.ui-autocomplete-footer))");
-
-                if (resultsPane.length > 0) {
-                    $("<div/>")
-                        .addClass("ui-autocomplete-footer")
-                        .text("Press Tab to auto-complete.")
-                        .appendTo(resultsPane);
                 }
-        });
+
+                return parsed;
+            },
+            url: SITE_ROOT + "api/" + "search/"
+        })
+        .bind("autocompleteshow", function() {
+            /*
+            * Add the footer to the bottom of the results pane the
+            * first time it's created.
+            */
+            var resultsPane = $(".ui-autocomplete-results:not(" +
+                                ":has(.ui-autocomplete-footer))");
+
+            if (resultsPane.length > 0) {
+                $("<div/>")
+                    .addClass("ui-autocomplete-footer")
+                    .text("Press Tab to auto-complete.")
+                    .appendTo(resultsPane);
+            }
+    });
 };
 
 
@@ -341,8 +338,7 @@ $(document).ready(function() {
     var searchGroupsEl = $("#search_field");
 
     if (searchGroupsEl.length > 0) {
-        searchGroupsEl
-            .searchAutoComplete();
+        searchGroupsEl.searchAutoComplete();
     }
 
     $('#submitter, .reviewer a').hover(
