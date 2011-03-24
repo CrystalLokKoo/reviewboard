@@ -4816,7 +4816,7 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
     Provides information on users, groups and review requests.
 
     This is the resource for the autocomplete widget for
-    quick search. This resource help filters for
+    quick search. This resource helps filter for
     users, groups and review requests.
     """
     name = 'search'
@@ -4824,12 +4824,21 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
 
     @webapi_check_local_site
     @webapi_check_login_required
-    def get(self, request, *args, **kwargs):
-
+    def get(self, request, local_site_name=None, fullname=None, q=None, displayname=None, id=None, *args, **kwargs):
         """Returns information on users, groups and review requests.
+        
+        This is used by the autocomplete widget for quick search to
+        get information on users, groups and review requests. This
+        function returns users' first name, last name and username,
+        groups' name and display name, and review requests' ID and
+        summary.
         """
         search_q = request.GET.get('q', None)
-        query = User.objects.filter(is_active=True)
+        local_site = _get_local_site(local_site_name)
+        if local_site:
+            query = local_site.users.filter(is_active=True)
+        else:
+            query = self.model.objects.filter(is_active=True)
 
         if search_q:
             q = (Q(username__istartswith=search_q) |
@@ -4843,36 +4852,35 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
             query = query.filter(q)
 
         search_q = request.GET.get('q', None)
-        local_site_name = None
         local_site = _get_local_site(local_site_name)
         query_groups = Group.objects.filter(local_site=local_site)
 
         if search_q:
-            q2 = (Q(name__istartswith=search_q) |
+            q = (Q(name__istartswith=search_q) |
                   Q(display_name__istartswith=search_q))
 
             if request.GET.get('displayname', None):
-                q2 = q2 | Q(display_name__istartswith=search_q)
+                q = q | Q(display_name__istartswith=search_q)
 
-            query_groups = query_groups.filter(q2)
+            query_groups = query_groups.filter(q)
 
         search_q = request.GET.get('q', None)
         query_review_requests = ReviewRequest.objects.filter(local_site=local_site)
 
         if search_q:
-            q3 = (Q(id__istartswith=search_q) |
+            q = (Q(id__istartswith=search_q) |
                   Q(summary__icontains=search_q))
 
             if request.GET.get('id', None):
-                q3 = q3 | Q(id__istartswith=search_q)
+                q = q | Q(id__istartswith=search_q)
 
-            query_review_requests = query_review_requests.filter(q3)
+            query_review_requests = query_review_requests.filter(q)
 
         return 200, {
             self.name: {
-            'users': query,
-            'groups': query_groups,
-            'review_requests': query_review_requests,
+                'users': query,
+                'groups': query_groups,
+                'review_requests': query_review_requests,
             },
         }
 
