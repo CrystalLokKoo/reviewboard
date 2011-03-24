@@ -4912,6 +4912,7 @@ class ServerInfoResource(WebAPIResource):
                     'url': url,
                     'administrators': [{'name': name, 'email': email}
                                        for name, email in settings.ADMINS],
+                    'time_zone': settings.TIME_ZONE,
                 },
             },
         }
