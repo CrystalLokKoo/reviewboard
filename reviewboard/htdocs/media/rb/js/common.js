@@ -298,7 +298,7 @@ $.fn.searchAutoComplete = function() {
                                 result: value[values[j]]
                             });
                         }
-                        
+
                         else if (value.public) {
                             // Only show review requests that are public
                             value.url = SITE_ROOT + "r/" + value.id;
