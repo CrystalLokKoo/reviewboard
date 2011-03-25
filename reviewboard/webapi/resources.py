@@ -4826,7 +4826,7 @@ class SearchResource(WebAPIResource, DjbletsUserResource):
     @webapi_check_login_required
     def get(self, request, local_site_name=None, fullname=None, q=None, displayname=None, id=None, *args, **kwargs):
         """Returns information on users, groups and review requests.
-        
+
         This is used by the autocomplete widget for quick search to
         get information on users, groups and review requests. This
         function returns users' first name, last name and username,
