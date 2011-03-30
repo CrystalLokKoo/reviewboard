@@ -13,6 +13,10 @@
 <link rel="stylesheet" type="text/css" href="{{MEDIA_URL}}djblets/css/datagrid.css?{{MEDIA_SERIAL}}" />
 {% endblock %}
 
+{% block scripts-post %}
+<script type="text/javascript" src="{{MEDIA_URL}}djblets/js/datagrid.js?{{MEDIA_SERIAL}}"></script>
+{% endblock %}
+
 {% block content %}
 {% box "dashboard" %}
 <div id="dashboard-wrapper">

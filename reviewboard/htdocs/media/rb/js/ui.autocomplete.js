@@ -656,15 +656,14 @@ $.ui.autocomplete.select = function (options, input, select, config) {
 			: available;
 	}
 
-    function makeItem(data)
-    {
+    function makeItem(data) {
         if (options.clickURLChange === false) {
             return $("<li/>");
         }
         else {
             //For Quick Search
             return $("<li/>").click(function() {
-                    window.open(data["url"]);
+                window.open(data["url"]);
                 });
         }
     }
