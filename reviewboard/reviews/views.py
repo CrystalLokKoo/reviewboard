@@ -1050,6 +1050,11 @@ def search(request,
         # FIXME: I'm not super thrilled with this
         return HttpResponseRedirect(reverse("root"))
 
+    query_review_requests = ReviewRequest.objects.filter(id__istartswith=query)
+
+    if (query.isdigit() and query_review_requests):
+        return HttpResponseRedirect((".." + "/" + query))
+
     import lucene
     lv = [int(x) for x in lucene.VERSION.split('.')]
     lucene_is_2x = lv[0] == 2 and lv[1] < 9
