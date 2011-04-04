@@ -265,10 +265,10 @@ $.fn.searchAutoComplete = function() {
 
                 else if (data.summary) {
                     //For the format of review requests
-                    if(data.summary.length < 22)
+                    if(data.summary.length < 28)
                         s = data.summary;
                     else
-                        s = (data.summary).substring(0, 22);
+                        s = (data.summary).substring(0, 28);
                     s += " <span>(" + data.id + ")</span>";
                 }
 
@@ -277,6 +277,7 @@ $.fn.searchAutoComplete = function() {
             matchCase: false,
             multiple: true,
             clickToURL: true,
+            width: 240,
             parse: function(data) {
                 var jsonData = JSON.parse(data);
                 var jsonDataSearch = jsonData.search;
