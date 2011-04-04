@@ -265,7 +265,10 @@ $.fn.searchAutoComplete = function() {
 
                 else if (data.summary) {
                     //For the format of review requests
-                    s = data.summary;
+                    if(data.summary.length < 22)
+                        s = data.summary;
+                    else
+                        s = (data.summary).substring(0, 22);
                     s += " <span>(" + data.id + ")</span>";
                 }
 
@@ -273,7 +276,7 @@ $.fn.searchAutoComplete = function() {
             },
             matchCase: false,
             multiple: true,
-            clickURLChange: true,
+            clickToURL: true,
             parse: function(data) {
                 var jsonData = JSON.parse(data);
                 var jsonDataSearch = jsonData.search;
@@ -316,21 +319,6 @@ $.fn.searchAutoComplete = function() {
             },
             url: SITE_ROOT + "api/" + "search/"
         })
-        .bind("autocompleteshow", function() {
-            /*
-            * Add the footer to the bottom of the results pane the
-            * first time it's created.
-            */
-            var resultsPane = $(".ui-autocomplete-results:not(" +
-                                ":has(.ui-autocomplete-footer))");
-
-            if (resultsPane.length > 0) {
-                $("<div/>")
-                    .addClass("ui-autocomplete-footer")
-                    .text("Press Tab to auto-complete.")
-                    .appendTo(resultsPane);
-            }
-    });
 };
 
 
