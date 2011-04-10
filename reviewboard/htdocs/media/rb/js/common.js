@@ -277,6 +277,7 @@ $.fn.searchAutoComplete = function() {
             matchCase: false,
             multiple: true,
             clickToURL: true,
+            selectFirst: false,
             width: 240,
             parse: function(data) {
                 var jsonData = JSON.parse(data);
