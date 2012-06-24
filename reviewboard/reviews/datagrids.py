@@ -451,7 +451,7 @@ class DiffUpdatedSinceColumn(DateTimeSinceColumn):
         else:
             return ""
 
-class LastModifiedByColumn(Column):
+class LastUpdatedByColumn(Column):
     """
     A column indicating the last user that modified the review request.
     """
@@ -460,8 +460,8 @@ class LastModifiedByColumn(Column):
                         *args, **kwargs)
 
     def render_data(self, obj):
-        if obj.last_modified_user:
-            return obj.last_modified_user
+        if obj.last_updated_by:
+            return obj.last_updated_by
         else:
             return ""
 
@@ -491,7 +491,7 @@ class ReviewRequestDataGrid(DataGrid):
         db_field="last_updated",
         field_name="last_updated",
         css_class=lambda r: ageid(r.last_updated))
-    last_modified_by = LastModifiedByColumn()
+    last_updated_by = LastUpdatedByColumn()
     diff_updated = DiffUpdatedColumn(format="F jS, Y, P", shrink=True,
         css_class=lambda r: ageid(r.diffset_history.last_diff_updated))
     time_added_since = DateTimeSinceColumn(_("Posted"),

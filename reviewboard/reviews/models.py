@@ -334,7 +334,7 @@ class ReviewRequest(models.Model):
         verbose_name=_("change descriptions"),
         related_name="review_request",
         blank=True)
-    last_modified_user = models.ForeignKey(User, null=True)
+    last_updated_by = models.ForeignKey(User, null=True)
 
     # Review-related information
     last_review_timestamp = models.DateTimeField(_("last review timestamp"),
@@ -1251,7 +1251,7 @@ class ReviewRequestDraft(models.Model):
             self.changedesc.save()
             review_request.changedescs.add(self.changedesc)
 
-        review_request.last_modified_user = user
+        review_request.last_updated_by = user
         review_request.save()
 
         if send_notification:
@@ -1644,7 +1644,7 @@ class Review(models.Model):
 
         # Update the last_updated timestamp on the review request.
         self.review_request.last_review_timestamp = self.timestamp
-        self.review_request.last_modified_user = user
+        self.review_request.last_updated_by = user
         self.review_request.save()
 
         # Atomicly update the shipit_count
