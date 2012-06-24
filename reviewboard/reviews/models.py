@@ -1644,6 +1644,7 @@ class Review(models.Model):
 
         # Update the last_updated timestamp on the review request.
         self.review_request.last_review_timestamp = self.timestamp
+        self.review_request.last_modified_user = user
         self.review_request.save()
 
         # Atomicly update the shipit_count
