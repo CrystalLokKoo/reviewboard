@@ -1251,6 +1251,7 @@ class ReviewRequestDraft(models.Model):
             self.changedesc.save()
             review_request.changedescs.add(self.changedesc)
 
+        # Update the last updated user on to the review request.
         review_request.last_updated_by = user
         review_request.save()
 
@@ -1644,7 +1645,10 @@ class Review(models.Model):
 
         # Update the last_updated timestamp on the review request.
         self.review_request.last_review_timestamp = self.timestamp
+
+        # Update the last updated user on to the review request.
         self.review_request.last_updated_by = user
+
         self.review_request.save()
 
         # Atomicly update the shipit_count
