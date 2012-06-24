@@ -1251,7 +1251,7 @@ class ReviewRequestDraft(models.Model):
             self.changedesc.save()
             review_request.changedescs.add(self.changedesc)
 
-        review_request.last_modified_user = user        
+        review_request.last_modified_user = user
         review_request.save()
 
         if send_notification:
