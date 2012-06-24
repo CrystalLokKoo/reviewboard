@@ -451,13 +451,16 @@ class DiffUpdatedSinceColumn(DateTimeSinceColumn):
         else:
             return ""
 
-class DescriptionColumn(Column):
-    def __init__(self, label=_("Description"), *args, **kwargs):
+class LastModifiedUserColumn(Column):
+    def __init__(self, label=_("Last Updated By"), *args, **kwargs):
         Column.__init__(self, label=label, *args, **kwargs)
         self.sortable = True
 
     def render_data(self, obj):
-        return obj.description
+        if obj.last_modified_user:
+            return obj.last_modified_user
+        else:
+            return ""    
 
 class ReviewRequestDataGrid(DataGrid):
     """
@@ -588,7 +591,7 @@ class DashboardDataGrid(ReviewRequestDataGrid):
     """
     new_updates = NewUpdatesColumn()
     my_comments = MyCommentsColumn()
-    description = DescriptionColumn()
+    last_modified_user = LastModifiedUserColumn()
 
     def __init__(self, *args, **kwargs):
         local_site = kwargs.pop('local_site', None)

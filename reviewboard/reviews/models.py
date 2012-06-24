@@ -334,6 +334,7 @@ class ReviewRequest(models.Model):
         verbose_name=_("change descriptions"),
         related_name="review_request",
         blank=True)
+    last_modified_user = models.ForeignKey(User, null=True)
 
     # Review-related information
     last_review_timestamp = models.DateTimeField(_("last review timestamp"),
@@ -774,7 +775,7 @@ class ReviewRequest(models.Model):
         draft = get_object_or_none(self.draft)
         if draft is not None:
             # This will in turn save the review request, so we'll be done.
-            changes = draft.publish(self, send_notification=False)
+            changes = draft.publish(self, send_notification=False, user=user)
             draft.delete()
         else:
             changes = None
@@ -1250,6 +1251,7 @@ class ReviewRequestDraft(models.Model):
             self.changedesc.save()
             review_request.changedescs.add(self.changedesc)
 
+        review_request.last_modified_user = user        
         review_request.save()
 
         if send_notification:
