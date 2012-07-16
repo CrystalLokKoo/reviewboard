@@ -9,10 +9,14 @@ import os
 import subprocess
 import sys
 
-from ez_setup import use_setuptools
-use_setuptools()
+try:
+    from setuptools import setup, find_packages
+except ImportError:
+    from ez_setup import use_setuptools
+    use_setuptools()
+    from setuptools import setup, find_packages
 
-from setuptools import setup, find_packages
+
 from setuptools.command.egg_info import egg_info
 from distutils.command.install_data import install_data
 from distutils.command.install import INSTALL_SCHEMES
@@ -152,6 +156,7 @@ setup(name=PACKAGE_NAME,
           'django-pipeline>=1.2.1',
           'Pygments>=1.4',
           'flup',
+          'mimeparse',
           'paramiko>=1.7.6',
           'python-dateutil==1.5',
           'python-memcached',

@@ -1453,10 +1453,8 @@ class DiffResource(WebAPIResource):
     model_parent_key = 'history'
     last_modified_field = 'timestamp'
 
-    allowed_mimetypes = [
-        'application/json',
-        'application/xml',
-        'text/x-patch'
+    allowed_item_mimetypes = WebAPIResource.allowed_item_mimetypes + [
+        'text/x-patch',
     ]
 
     def get_queryset(self, request, *args, **kwargs):
@@ -1512,7 +1510,7 @@ class DiffResource(WebAPIResource):
         diff.
         """
         mimetype = get_http_requested_mimetype(request,
-                                               self.allowed_mimetypes)
+                                               self.allowed_item_mimetypes)
 
         if mimetype == 'text/x-patch':
             return self._get_patch(request, *args, **kwargs)
@@ -2307,7 +2305,7 @@ class HostingServiceAccountResource(WebAPIResource):
     The list of accounts tied to hosting services can be retrieved, and new
     accounts can be linked through an HTTP POST.
     """
-    name = 'hosting-service-account'
+    name = 'hosting_service_account'
     model = HostingServiceAccount
     fields = {
         'id': {
@@ -2549,7 +2547,7 @@ class RepositoryResource(WebAPIResource):
     @webapi_response_errors(BAD_HOST_KEY, INVALID_FORM_DATA, NOT_LOGGED_IN,
                             PERMISSION_DENIED, REPO_AUTHENTICATION_ERROR,
                             SERVER_CONFIG_ERROR, UNVERIFIED_HOST_CERT,
-                            UNVERIFIED_HOST_KEY)
+                            UNVERIFIED_HOST_KEY, REPO_INFO_ERROR)
     @webapi_request_fields(
         required={
             'name': {
@@ -2683,7 +2681,8 @@ class RepositoryResource(WebAPIResource):
     @webapi_response_errors(DOES_NOT_EXIST, NOT_LOGGED_IN, PERMISSION_DENIED,
                             INVALID_FORM_DATA, SERVER_CONFIG_ERROR,
                             BAD_HOST_KEY, UNVERIFIED_HOST_KEY,
-                            UNVERIFIED_HOST_CERT, REPO_AUTHENTICATION_ERROR)
+                            UNVERIFIED_HOST_CERT, REPO_AUTHENTICATION_ERROR,
+                            REPO_INFO_ERROR)
     @webapi_request_fields(
         optional={
             'bug_tracker': {
@@ -2910,6 +2909,12 @@ class RepositoryResource(WebAPIResource):
                     return REPO_AUTHENTICATION_ERROR, {
                         'reason': str(e),
                     }
+            except SCMError, e:
+                logging.error('Got unexpected SCMError when checking repository: %s'
+                              % e, exc_info=1)
+                return REPO_INFO_ERROR, {
+                    'error': str(e),
+                }
             except Exception, e:
                 logging.error('Unknown error in checking repository %s: %s',
                               path, e, exc_info=1)
@@ -3243,13 +3248,17 @@ class BaseFileAttachmentResource(WebAPIResource):
         },
         'url': {
             'type': str,
-            'description': "The URL of the file, for downloading purposes."
+            'description': "The URL of the file, for downloading purposes. "
                            "If this is not an absolute URL, then it's "
-                           "relative t othe Review Board server's URL.",
+                           "relative to the Review Board server's URL.",
         },
         'icon_url': {
             'type': str,
             'description': 'The URL to a 24x24 icon representing this file.'
+        },
+        'thumbnail': {
+            'type': str,
+            'description': 'A thumbnail representing this file.',
         },
     }
 
