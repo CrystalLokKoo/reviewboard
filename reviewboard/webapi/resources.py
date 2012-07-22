@@ -43,7 +43,8 @@ from reviewboard.attachments.models import FileAttachment
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.diffutils import get_diff_files, \
                                              get_original_file, \
-                                             get_patched_file
+                                             get_patched_file, \
+                                             populate_diff_chunks
 from reviewboard.diffviewer.forms import EmptyDiffError, DiffTooBigError
 from reviewboard.extensions.base import get_extension_manager
 from reviewboard.hostingsvcs.models import HostingServiceAccount
@@ -252,7 +253,7 @@ class BaseCommentResource(WebAPIResource):
 
         return 200, {
             comment_resource.item_result_key: comment,
-            'last_activity_time': last_activity_time,
+            'last_activity_time': last_activity_time.isoformat(),
         }
 
     def should_update_issue_status(self, comment, **kwargs):
@@ -1232,8 +1233,8 @@ class FileDiffResource(WebAPIResource):
 
         highlighting = request.GET.get('syntax-highlighting', False)
 
-        files = get_diff_files(filediff.diffset, filediff,
-                               enable_syntax_highlighting=highlighting)
+        files = get_diff_files(filediff.diffset, filediff)
+        populate_diff_chunks(files, highlighting)
 
         if not files:
             # This may not be the right error here.
@@ -5679,7 +5680,6 @@ class ReviewRequestLastUpdateResource(WebAPIResource):
             return _no_access_error(request.user)
 
         timestamp, updated_object = review_request.get_last_activity()
-        timestamp = timestamp.isoformat()
 
         if get_modified_since(request, timestamp):
             return HttpResponseNotModified()
@@ -5718,7 +5718,7 @@ class ReviewRequestLastUpdateResource(WebAPIResource):
 
         return 200, {
             self.item_result_key: {
-                'timestamp': timestamp,
+                'timestamp': timestamp.isoformat(),
                 'user': user,
                 'summary': summary,
                 'type': update_type,

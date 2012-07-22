@@ -1,3 +1,4 @@
+import copy
 import logging
 import time
 from datetime import datetime
@@ -75,7 +76,8 @@ def _render_permission_denied(
 
 def _find_review_request(request, review_request_id, local_site_name):
     """
-    Find a review request based on an ID and optional LocalSite name.
+    Find a review request based on an ID, optional LocalSite name and optional
+    select related query.
 
     If a local site is passed in on the URL, we want to look up the review
     request using the local_id instead of the pk. This allows each LocalSite
@@ -146,7 +148,7 @@ def _build_id_map(objects):
     return id_map
 
 
-def _query_for_diff(review_request, user, revision, query_extra=None):
+def _query_for_diff(review_request, user, revision, draft):
     """
     Queries for a diff based on several parameters.
 
@@ -159,24 +161,18 @@ def _query_for_diff(review_request, user, revision, query_extra=None):
     # This will try to grab the diff associated with a draft if the review
     # request has an associated draft and is either the revision being
     # requested or no revision is being requested.
-    draft = review_request.get_draft(user)
-    if draft and draft.diffset and \
-       (revision is None or draft.diffset.revision == revision):
+    if (draft and draft.diffset_id and
+        (revision is None or draft.diffset.revision == revision)):
         return draft.diffset
 
-    query = Q(history=review_request.diffset_history)
+    query = Q(history=review_request.diffset_history_id)
 
     # Grab a revision if requested.
     if revision is not None:
         query = query & Q(revision=revision)
 
-    # Anything else the caller wants.
-    if query_extra:
-        query = query & query_extra
-
     try:
-        results = DiffSet.objects.filter(query).latest()
-        return results
+        return DiffSet.objects.filter(query).latest()
     except DiffSet.DoesNotExist:
         raise Http404
 
@@ -300,8 +296,8 @@ def review_detail(request,
     # request based on the local_id instead of the pk. This allows each
     # local_site configured to have its own review request ID namespace
     # starting from 1.
-    review_request, response = \
-        _find_review_request(request, review_request_id, local_site_name)
+    review_request, response = _find_review_request(
+        request, review_request_id, local_site_name)
 
     if not review_request:
         return response
@@ -407,6 +403,11 @@ def review_detail(request,
     draft = review_request.get_draft(request.user)
     diffsets = list(DiffSet.objects.filter(
         history__pk=review_request.diffset_history_id))
+
+    # Map diffset IDs to their revision ID for changedescs
+    diffset_versions = {}
+    for diffset in diffsets:
+        diffset_versions[diffset.pk] = diffset.revision
 
     # Find out if we can bail early. Generate an ETag for this.
     last_activity_time, updated_object = \
@@ -573,8 +574,10 @@ def review_detail(request,
     for changedesc in changedescs:
         fields_changed = []
 
-        for name, info in changedesc.fields_changed.items():
+        for name, info in changedesc.fields_changed.iteritems():
+            info = copy.deepcopy(info)
             multiline = False
+            diff_revision = False
 
             if 'added' in info or 'removed' in info:
                 change_type = 'add_remove'
@@ -592,6 +595,10 @@ def review_detail(request,
                                 info[field][i] = (buginfo[0], full_bug_url)
                             except TypeError:
                                 logging.warning("Invalid bugtracker url format")
+                elif name == "diff" and "added" in info:
+                    # Sets the incremental revision number for a review
+                    # request change, provided it is an updated diff.
+                    diff_revision = diffset_versions[info['added'][0][2]]
 
             elif 'old' in info or 'new' in info:
                 change_type = 'changed'
@@ -626,6 +633,7 @@ def review_detail(request,
                 'multiline': multiline,
                 'info': info,
                 'type': change_type,
+                'diff_revision': diff_revision,
             })
 
         # Expand the latest review change
@@ -915,22 +923,21 @@ def diff(request,
     if not review_request:
         return response
 
-    diffset = _query_for_diff(review_request, request.user, revision)
+    draft = review_request.get_draft(request.user)
+    diffset = _query_for_diff(review_request, request.user, revision, draft)
 
     interdiffset = None
     review = None
-    draft = None
 
     if interdiff_revision and interdiff_revision != revision:
         # An interdiff revision was specified. Try to find a matching
         # diffset.
         interdiffset = _query_for_diff(review_request, request.user,
-                                       interdiff_revision)
+                                       interdiff_revision, draft)
 
     # Try to find an existing pending review of this diff from the
     # current user.
     pending_review = review_request.get_pending_review(request.user)
-    draft = review_request.get_draft(request.user)
 
     has_draft_diff = draft and draft.diffset
     is_draft_diff = has_draft_diff and draft.diffset == diffset
@@ -1011,7 +1018,8 @@ def raw_diff(request,
     if not review_request:
         return response
 
-    diffset = _query_for_diff(review_request, request.user, revision)
+    draft = review_request.get_draft(request.user)
+    diffset = _query_for_diff(review_request, request.user, revision, draft)
 
     tool = review_request.repository.get_scmtool()
     data = tool.get_parser('').raw_diff(diffset)
@@ -1105,20 +1113,19 @@ def diff_fragment(request,
     if not review_request:
         return response
 
-    review_request.get_draft(request.user)
+    draft = review_request.get_draft(request.user)
 
     if interdiff_revision is not None:
         interdiffset = _query_for_diff(review_request, request.user,
-                                       interdiff_revision)
-        interdiffset_id = interdiffset.id
+                                       interdiff_revision, draft)
     else:
-        interdiffset_id = None
+        interdiffset = None
 
-    diffset = _query_for_diff(review_request, request.user, revision)
+    diffset = _query_for_diff(review_request, request.user, revision, draft)
 
-    return view_diff_fragment(request, diffset.id, filediff_id,
+    return view_diff_fragment(request, diffset, filediff_id,
                               review_request.get_absolute_url(),
-                              interdiffset_id, chunkindex, template_name)
+                              interdiffset, chunkindex, template_name)
 
 
 @check_login_required
