@@ -216,7 +216,8 @@
 <div class="main">
  <div class="header">
    <div class="collapse-button"></div>
-   <div class="reviewer"><b>{% trans "Review request changed" %}</b></div>
+   <div class="reviewer"><b>{% blocktrans with user=entry.changedesc.last_modified_user %} Review request
+    changed by {{ user }}. {% endblocktrans %}</b></div>
    <div class="posted_time">{% localtime on %}{% blocktrans with entry.changedesc.timestamp as timestamp and entry.changedesc.timestamp|date:"c" as timestamp_raw %}Updated <time class="timesince" datetime="{{timestamp_raw}}">{{timestamp}}</time> ({{timestamp}}){% endblocktrans %}{% endlocaltime %}</div>
  </div>
  <div class="body">

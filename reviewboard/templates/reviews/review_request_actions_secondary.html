@@ -2,7 +2,7 @@
 {% load i18n %}
 {% load staticfiles %}
 
-{% if request.user.pk == review_request.submitter_id or perms.reviews.can_change_status and review_request.public %}
+{% if can_edit_review_request or perms.reviews.can_change_status and review_request.public %}
 {%  if review_request.status == 'P' %}
  <li>
   <a id="close-review-request-link" href="#">{% trans "Close" %} <img src="{% static "rb/images/dropdown.png" %}" width="7" height="5" border="0" alt="" /></a>
@@ -16,7 +16,7 @@
  </li>
 {%  endif %}
 {% endif %}
-{% if request.user.pk == review_request.submitter_id or perms.reviews.can_edit_reviewrequest %}
+{% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
  <li><a id="upload-screenshot-link" href="#">{% trans "Add Screenshot" %}</a></li>
  <li><a id="upload-file-link" href="#">{% trans "Add File" %}</a></li>
 {%  if upload_diff_form %}

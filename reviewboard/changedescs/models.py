@@ -1,3 +1,4 @@
+from django.contrib.auth.models import User
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import ugettext_lazy as _
@@ -30,6 +31,9 @@ class ChangeDescription(models.Model):
        * 'removed': The fields that were removed, if any.
        * 'added': The fields that were added, if any.
     """
+    last_modified_user = models.ForeignKey(User,
+                                           related_name='change_description',
+                                           null=True)
     timestamp = models.DateTimeField(_('timestamp'), default=timezone.now)
     public = models.BooleanField(_("public"), default=False)
     text = models.TextField(_("change text"), blank=True)

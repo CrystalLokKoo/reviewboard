@@ -1620,7 +1620,7 @@ class DiffResource(WebAPIResource):
 
         try:
             diffset = form.create(request.FILES['path'],
-                                  request.FILES.get('parent_diff_path'))
+                                  request.FILES.get('parent_diff_path'), request.user)
         except FileNotFoundError, e:
             return REPO_FILE_NOT_FOUND, {
                 'file': e.path,
@@ -3059,7 +3059,7 @@ class BaseScreenshotResource(WebAPIResource):
             }
 
         try:
-            screenshot = form.create(request.FILES['path'], review_request)
+            screenshot = form.create(request.FILES['path'], review_request, request.user)
         except ValueError, e:
             return INVALID_FORM_DATA, {
                 'fields': {
@@ -3354,7 +3354,7 @@ class BaseFileAttachmentResource(WebAPIResource):
             }
 
         try:
-            file = form.create(request.FILES['path'], review_request)
+            file = form.create(request.FILES['path'], review_request, request.user)
         except ValueError, e:
             return INVALID_FORM_DATA, {
                 'fields': {
@@ -3620,8 +3620,7 @@ class ReviewRequestDraftResource(WebAPIResource):
         """Creates a draft, if the user has permission to."""
         if not review_request.is_mutable_by(request.user):
            raise PermissionDenied
-
-        return ReviewRequestDraft.create(review_request)
+        return ReviewRequestDraft.create(review_request, request.user)
 
     def get_queryset(self, request, review_request_id, *args, **kwargs):
         review_request = review_request_resource.get_object(

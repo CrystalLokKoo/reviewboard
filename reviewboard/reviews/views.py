@@ -671,9 +671,9 @@ def review_detail(request,
             'has_diffs': (draft and draft.diffset) or len(diffsets) > 0,
             'file_attachments': file_attachments,
             'screenshots': screenshots,
+            'can_edit_review_request': review_request.is_mutable_by(request.user),
         })))
     set_etag(response, etag)
-
     return response
 
 

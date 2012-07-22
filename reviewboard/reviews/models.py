@@ -521,8 +521,16 @@ class ReviewRequest(models.Model):
 
     def is_mutable_by(self, user):
         "Returns true if the user can modify this review request"
-        return self.submitter == user or \
-               user.has_perm('reviews.can_edit_reviewrequest')
+        if self.submitter == user or \
+           user.has_perm('reviews.can_edit_reviewrequest') or \
+           self.target_people.filter(id=user.id).exists():
+            return True
+        elif self.target_groups.all():
+            for group in self.target_groups.all():
+                if group.users.filter(id=user.id).exists():
+                    return True
+        else:
+            return False
 
     def get_draft(self, user=None):
         """
@@ -534,7 +542,7 @@ class ReviewRequest(models.Model):
             return get_object_or_none(self.draft)
         elif user.is_authenticated():
             return get_object_or_none(self.draft,
-                                      review_request__submitter=user)
+                                      draft_creator=user)
 
         return None
 
@@ -803,7 +811,7 @@ class ReviewRequest(models.Model):
                         profile__starred_review_requests=self,
                         local_site=self.local_site))
 
-        draft = get_object_or_none(self.draft)
+        draft = get_object_or_none(self.draft, draft_creator=user)
         if draft is not None:
             # This will in turn save the review request, so we'll be done.
             changes = draft.publish(self, send_notification=False, user=user)
@@ -912,10 +920,12 @@ class ReviewRequestDraft(models.Model):
     be modified and eventually saved or discarded. When saved, the new
     details are copied back over to the originating ReviewRequest.
     """
+    draft_creator = models.ForeignKey(User,
+                                       related_name="review_requests_draft",
+                                       null=True)
     review_request = models.ForeignKey(ReviewRequest,
                                        related_name="draft",
-                                       verbose_name=_("review request"),
-                                       unique=True)
+                                       verbose_name=_("review request"))
     last_updated = ModificationTimestampField(_("last updated"))
     summary = models.CharField(_("summary"), max_length=300)
     description = models.TextField(_("description"))
@@ -962,6 +972,9 @@ class ReviewRequestDraft(models.Model):
     # Set this up with a ConcurrencyManager to help prevent race conditions.
     objects = ConcurrencyManager()
 
+    class Meta:
+        unique_together = (('review_request', 'draft_creator'),)
+
     def get_bug_list(self):
         """
         Returns a sorted list of bugs associated with this review request.
@@ -990,7 +1003,7 @@ class ReviewRequestDraft(models.Model):
         super(ReviewRequestDraft, self).save()
 
     @staticmethod
-    def create(review_request):
+    def create(review_request, user):
         """
         Creates a draft based on a review request.
 
@@ -1001,6 +1014,7 @@ class ReviewRequestDraft(models.Model):
         draft, draft_is_new = \
             ReviewRequestDraft.objects.get_or_create(
                 review_request=review_request,
+                draft_creator=user,
                 defaults={
                     'summary': review_request.summary,
                     'description': review_request.description,
@@ -1011,6 +1025,7 @@ class ReviewRequestDraft(models.Model):
 
         if draft.changedesc is None and review_request.public:
             changedesc = ChangeDescription()
+            changedesc.last_modified_user=user
             changedesc.save()
             draft.changedesc = changedesc
 

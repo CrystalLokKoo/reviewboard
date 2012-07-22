@@ -49,7 +49,7 @@
    <td class="value"><a id="submitter" class="user" href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a></td>
    <td class="caption" colspan="2">
     {% trans "Reviewers" %}
-{% if request.user == review_request.submitter or perms.reviews.can_edit_reviewrequest %}
+{% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
     <span class="required-flag">*</span>
 {% endif %}
    </td>
@@ -105,7 +105,7 @@
   <label for="testing_done">{% trans "Testing Done" %}:</label>
   <pre id="testing_done" class="editable">{{review_request_details.testing_done|escape}}</pre>
  </div>
-{% if request.user.pk == review_request.submitter_id or perms.reviews.can_edit_reviewrequest %}
+{% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
  <div class="content" id="required-field-legend"><span class="required-flag">*</span> {% trans "Required Field" %}</div>
 {% endif %}
  <div class="content clearfix"{% if not screenshots %} style="display: none;"{% endif %}>
@@ -116,7 +116,7 @@
     <div class="screenshot" onclick="javascript:window.location='{{image.get_absolute_url}}'; return false;"><a href="{{image.get_absolute_url}}">{{image.thumb}}</a></div>
     <div class="screenshot-caption">
      <a href="{{image.get_absolute_url}}" class="edit">{% if draft %}{{image.draft_caption|default:image.caption}}{% else %}{{image.caption}}{% endif %}</a>
-     {% if request.user.pk == review_request.submitter_id or perms.reviews.delete_screenshot %}
+     {% if can_edit_review_request or perms.reviews.delete_screenshot %}
       <a href="#" class="delete"><img src="{% static "rb/images/delete.png" %}" alt="{% trans "Delete Screenshot" %}" /></a>
      {% endif %}
     </div>
@@ -138,7 +138,7 @@
       <a href="{{file.get_absolute_url}}">
       <img src="{{file.icon_url}}" />
       {{file.filename}}</a>
-{% if request.user.pk == review_request.submitter_id or perms.reviews.delete_file %}
+{% if can_edit_review_request or perms.reviews.delete_file %}
       <a href="#" class="delete">
        <img src="{% static "rb/images/delete.png" %}" alt="{% trans "Delete File" %}" />
       </a>

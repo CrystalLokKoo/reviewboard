@@ -13,7 +13,7 @@ class UploadFileForm(forms.Form):
     caption = forms.CharField(required=False)
     path = forms.FileField(required=True)
 
-    def create(self, file, review_request):
+    def create(self, file, review_request, user):
         caption = self.cleaned_data['caption']
 
         file_attachment = FileAttachment(caption='',
@@ -21,7 +21,7 @@ class UploadFileForm(forms.Form):
                                          mimetype=file.content_type)
         file_attachment.file.save(file.name, file, save=True)
 
-        draft = ReviewRequestDraft.create(review_request)
+        draft = ReviewRequestDraft.create(review_request, user)
         draft.file_attachments.add(file_attachment)
         draft.save()
 
@@ -33,14 +33,14 @@ class CommentFileForm(forms.Form):
     review = forms.CharField(
         widget=forms.Textarea(attrs={'rows': '8','cols': '70'}))
 
-    def create(self, file_attachment, review_request):
+    def create(self, file_attachment, review_request, user):
         comment = FileAttachmentComment(text=self.cleaned_data['review'],
                                         file_attachment=file_attachment)
 
         comment.timestamp = timezone.now()
         comment.save(save=True)
 
-        draft = ReviewRequestDraft.create(review_request)
+        draft = ReviewRequestDraft.create(review_request, user)
         draft.file_attachment_comments.add(comment)
         draft.save()
 
