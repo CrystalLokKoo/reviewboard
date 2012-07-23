@@ -521,7 +521,7 @@ class ReviewRequest(models.Model):
 
     def is_mutable_by(self, user):
         "Returns true if the user can modify this review request"
-        return (self.submitter_id == user.pk or 
+        return (self.submitter_id == user.pk or
                 user.has_perm('reviews.can_edit_reviewrequest') or
                 self.target_people.filter(id=user.id).exists() or
                 self.target_groups.filter(users__id=user.pk).exists())
