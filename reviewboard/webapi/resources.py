@@ -3621,7 +3621,7 @@ class ReviewRequestDraftResource(WebAPIResource):
         """Creates a draft, if the user has permission to."""
         if not review_request.is_mutable_by(request.user):
            raise PermissionDenied
-        
+
         return ReviewRequestDraft.create(review_request, request.user)
 
     def get_queryset(self, request, review_request_id, *args, **kwargs):
