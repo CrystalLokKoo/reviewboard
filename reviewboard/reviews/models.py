@@ -521,16 +521,10 @@ class ReviewRequest(models.Model):
 
     def is_mutable_by(self, user):
         "Returns true if the user can modify this review request"
-        if self.submitter == user or \
-           user.has_perm('reviews.can_edit_reviewrequest') or \
-           self.target_people.filter(id=user.id).exists():
-            return True
-        elif self.target_groups.all():
-            for group in self.target_groups.all():
-                if group.users.filter(id=user.id).exists():
-                    return True
-        else:
-            return False
+        return (self.submitter_id == user.pk or 
+                user.has_perm('reviews.can_edit_reviewrequest') or
+                self.target_people.filter(id=user.id).exists() or
+                self.target_groups.filter(users__id=user.pk).exists())
 
     def get_draft(self, user=None):
         """
