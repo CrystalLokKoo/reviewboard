@@ -47,6 +47,7 @@ from reviewboard.diffviewer.diffutils import get_diff_files, \
                                              populate_diff_chunks
 from reviewboard.diffviewer.forms import EmptyDiffError, DiffTooBigError
 from reviewboard.extensions.base import get_extension_manager
+from reviewboard.hostingsvcs.errors import AuthorizationError
 from reviewboard.hostingsvcs.models import HostingServiceAccount
 from reviewboard.hostingsvcs.service import get_hosting_service
 from reviewboard.reviews.errors import PermissionError
@@ -1300,7 +1301,7 @@ class ChangeResource(WebAPIResource):
     * ``removed``: A list of items that were removed, if any.
     * ``added``: A list of items that were added, if any.
 
-    For ``screenshot_captions`` fields:
+    For ``screenshot_captions`` and ``file_captions`` fields:
 
     * ``old``: The old caption.
     * ``new``: The new caption.
@@ -1354,7 +1355,7 @@ class ChangeResource(WebAPIResource):
         fields_changed = obj.fields_changed.copy()
 
         for field, data in fields_changed.iteritems():
-            if field == 'screenshot_captions':
+            if field in ('screenshot_captions', 'file_captions'):
                 fields_changed[field] = [
                     {
                         'old': data[pk]['old'][0],
@@ -2397,7 +2398,7 @@ class HostingServiceAccountResource(WebAPIResource):
             return _no_access_error(request.user)
 
         # Validate the service.
-        if not get_hosting_service(service):
+        if not get_hosting_service(service_id):
             return INVALID_FORM_DATA, {
                 'fields': {
                     'service': ['This is not a valid service name'],
