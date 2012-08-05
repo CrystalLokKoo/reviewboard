@@ -2,6 +2,7 @@ import mimeparse
 import os
 
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
@@ -29,7 +30,7 @@ class FileAttachmentTests(TestCase):
         self.assertTrue(form.is_valid())
 
         review_request = ReviewRequest.objects.get(pk=1)
-        file_attachment = form.create(file, review_request)
+        file_attachment = form.create(file, review_request, User.objects.get(pk=1))
         self.assertEqual(os.path.basename(file_attachment.file.name),
                          'trophy.png')
         self.assertEqual(file_attachment.mimetype, 'image/png')

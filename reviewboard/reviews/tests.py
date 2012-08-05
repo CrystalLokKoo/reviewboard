@@ -596,7 +596,7 @@ class DraftTests(TestCase):
     def getDraft(self):
         """Convenience function for getting a new draft to work with."""
         return ReviewRequestDraft.create(ReviewRequest.objects.get(
-            summary="Add permission checking for JSON API"))
+            summary="Add permission checking for JSON API"), User.objects.get(pk=1))
 
 
 class FieldTests(TestCase):
@@ -949,7 +949,7 @@ class CounterTests(TestCase):
         self.assertEqual(self.site_profile2.total_outgoing_request_count, 0)
         self.assertEqual(self.site_profile2.pending_outgoing_request_count, 0)
 
-        ReviewRequestDraft.create(self.review_request)
+        ReviewRequestDraft.create(self.review_request, self.user)
         self.review_request.publish(self.user)
 
         self._reload_objects()
@@ -969,7 +969,7 @@ class CounterTests(TestCase):
         self.assertEqual(self.site_profile2.pending_outgoing_request_count, 0)
         self.assertEqual(self.site_profile2.starred_public_request_count, 0)
 
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_groups.add(self.group)
         draft.target_people.add(self.user)
         self.review_request.publish(self.user)
@@ -1073,7 +1073,7 @@ class CounterTests(TestCase):
         self.assertEqual(self.site_profile2.pending_outgoing_request_count, 0)
         self.assertEqual(self.site_profile2.starred_public_request_count, 0)
 
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_groups.add(self.group)
         draft.target_people.add(self.user)
         self.review_request.publish(self.user)
@@ -1250,7 +1250,7 @@ class CounterTests(TestCase):
 
     def test_add_group(self):
         """Testing counters when adding a group reviewer"""
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_groups.add(self.group)
 
         self.assertEqual(self.site_profile.total_incoming_request_count, 0)
@@ -1270,7 +1270,7 @@ class CounterTests(TestCase):
         """Testing counters when removing a group reviewer"""
         self.test_add_group()
 
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_groups.remove(self.group)
 
         self.assertEqual(self.site_profile.total_incoming_request_count, 1)
@@ -1288,7 +1288,7 @@ class CounterTests(TestCase):
 
     def test_add_person(self):
         """Testing counters when adding a person reviewer"""
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_people.add(self.user)
 
         self.assertEqual(self.site_profile.direct_incoming_request_count, 0)
@@ -1306,7 +1306,7 @@ class CounterTests(TestCase):
         """Testing counters when removing a person reviewer"""
         self.test_add_person()
 
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_people.remove(self.user)
 
         self.assertEqual(self.site_profile.direct_incoming_request_count, 1)
@@ -1325,7 +1325,7 @@ class CounterTests(TestCase):
     def test_populate_counters(self):
         """Testing counters when populated from a fresh upgrade or clear"""
         # The review request was already created
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_groups.add(self.group)
         draft.target_people.add(self.user)
         self.review_request.publish(self.user)
@@ -1359,7 +1359,7 @@ class CounterTests(TestCase):
     def test_populate_counters_after_change(self):
         """Testing counter inc/dec on uninitialized counter fields"""
         # The review request was already created
-        draft = ReviewRequestDraft.create(self.review_request)
+        draft = ReviewRequestDraft.create(self.review_request, self.user)
         draft.target_groups.add(self.group)
         draft.target_people.add(self.user)
 

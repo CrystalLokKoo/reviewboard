@@ -2577,7 +2577,7 @@ class ReviewRequestDraftResourceTests(BaseWebAPITestCase):
     def test_put_reviewrequestdraft_with_permission_denied_error(self):
         """Testing the PUT review-requests/<id>/draft/ API with Permission Denied error"""
         bugs_closed = '123,456'
-        review_request = ReviewRequest.objects.from_user('admin')[0]
+        review_request = ReviewRequest.objects.from_user(User.objects.get(pk=3))[0]
 
         rsp = self.apiPut(self.get_url(review_request), {
             'bugs_closed': bugs_closed,
@@ -4342,7 +4342,7 @@ class ChangeResourceTests(BaseWebAPITestCase):
         r.publish(self.user)
 
         # Create some draft data that will end up in the change description.
-        draft = ReviewRequestDraft.create(r)
+        draft = ReviewRequestDraft.create(r, self.user)
         write_fields(draft, 1)
 
         # Special-case screenshots

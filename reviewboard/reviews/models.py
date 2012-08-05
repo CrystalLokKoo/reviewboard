@@ -521,10 +521,10 @@ class ReviewRequest(models.Model):
 
     def is_mutable_by(self, user):
         "Returns true if the user can modify this review request"
-        return (self.submitter_id == user.pk or
+        return (self.submitter == user or
                 user.has_perm('reviews.can_edit_reviewrequest') or
                 self.target_people.filter(id=user.id).exists() or
-                self.target_groups.filter(users__id=user.pk).exists())
+                self.target_groups.filter(users__id=user.id).exists())
 
     def get_draft(self, user=None):
         """
@@ -750,7 +750,7 @@ class ReviewRequest(models.Model):
                 # A draft is needed if reopening a discarded review request.
                 self.public = False
                 changedesc.save()
-                draft = ReviewRequestDraft.create(self)
+                draft = ReviewRequestDraft.create(self, user)
                 draft.changedesc = changedesc
                 draft.save()
             else:
@@ -915,8 +915,8 @@ class ReviewRequestDraft(models.Model):
     details are copied back over to the originating ReviewRequest.
     """
     draft_creator = models.ForeignKey(User,
-                                       related_name="review_requests_draft",
-                                       null=True)
+                                      related_name="review_requests_draft",
+                                      null=True)
     review_request = models.ForeignKey(ReviewRequest,
                                        related_name="draft",
                                        verbose_name=_("review request"))
@@ -1019,7 +1019,7 @@ class ReviewRequestDraft(models.Model):
 
         if draft.changedesc is None and review_request.public:
             changedesc = ChangeDescription()
-            changedesc.last_modified_user=user
+            changedesc.last_modified_user = user
             changedesc.save()
             draft.changedesc = changedesc
 
