@@ -2574,10 +2574,38 @@ class ReviewRequestDraftResourceTests(BaseWebAPITestCase):
         self.assertEqual(rsp['err']['code'], INVALID_FORM_DATA.code)
         self.assertTrue('foobar' in rsp['fields'])
 
+    def test_put_reviewrequestdraft_with_admin(self):
+        """Testing the PUT review-requests/<id>/draft/ API with Admin user"""
+        review_request = ReviewRequest.objects.from_user('admin')[0]
+        branch_name = 'branch_foo'
+        rsp = self.apiPut(self.get_url(review_request), {
+            'branch': branch_name,
+        }, expected_mimetype=self.item_mimetype)
+
+        self.assertEqual(rsp['stat'], 'ok')
+        self.assertEqual(rsp['draft']['branch'], branch_name)
+
+        draft = ReviewRequestDraft.objects.get(pk=rsp['draft']['id'])
+        self.assertEqual(draft.branch, branch_name)
+
+    def test_put_reviewrequestdraft_with_normal_user(self):
+        """Testing the PUT review-requests/<id>/draft/ API with Admin user"""
+        review_request = ReviewRequest.objects.from_user(self.user.username)[0]
+        bugs = 12312
+        rsp = self.apiPut(self.get_url(review_request), {
+            'bugs': bugs,
+        }, expected_mimetype=self.item_mimetype)
+
+        self.assertEqual(rsp['stat'], 'ok')
+        self.assertEqual(rsp['draft']['bugs'], bugs)
+
+        draft = ReviewRequestDraft.objects.get(pk=rsp['draft']['id'])
+        self.assertEqual(draft.bugs, bugs)
+
     def test_put_reviewrequestdraft_with_permission_denied_error(self):
         """Testing the PUT review-requests/<id>/draft/ API with Permission Denied error"""
         bugs_closed = '123,456'
-        review_request = ReviewRequest.objects.from_user(User.objects.get(pk=3))[0]
+        review_request = ReviewRequest.objects.from_user('dopey')[0]
 
         rsp = self.apiPut(self.get_url(review_request), {
             'bugs_closed': bugs_closed,

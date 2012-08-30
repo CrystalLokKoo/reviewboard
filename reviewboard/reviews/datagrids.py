@@ -465,19 +465,19 @@ class DiffUpdatedSinceColumn(DateTimeSinceColumn):
         else:
             return ""
 
+
 class LastUpdatedByColumn(Column):
-    """
-    A column indicating the last user that modified the review request.
-    """
+    """A column indicating the last user that modified the review request."""
     def __init__(self, label=_("Last Updated By"), *args, **kwargs):
-        Column.__init__(self, label=label, sortable=True, link=True,
-                        *args, **kwargs)
+        super(LastUpdatedByColumn, self).__init__(
+            label=label,
+            sortable=True,
+            link=True,
+            *args, **kwargs)
 
     def render_data(self, obj):
-        if obj.last_updated_by:
-            return obj.last_updated_by
-        else:
-            return ""
+        return obj.last_updated_by or ""
+
 
 class ReviewRequestDataGrid(DataGrid):
     """

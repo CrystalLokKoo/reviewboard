@@ -262,7 +262,6 @@ class NewReviewRequestForm(forms.Form):
 
         review_request.add_default_reviewers()
         review_request.last_updated_by = user
-
         review_request.save()
         return review_request
 

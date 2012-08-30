@@ -348,7 +348,7 @@ class ViewTests(TestCase):
         review_request.publish(user1)
 
         # Create one on a draft with a new file attachment.
-        draft = ReviewRequestDraft.create(review_request)
+        draft = ReviewRequestDraft.create(review_request, user1)
         file3 = FileAttachment.objects.create(caption=caption_3,
                                               file=file,
                                               mimetype='image/png')
@@ -413,7 +413,7 @@ class ViewTests(TestCase):
         review_request.publish(user1)
 
         # Create one on a draft with a new screenshot.
-        draft = ReviewRequestDraft.create(review_request)
+        draft = ReviewRequestDraft.create(review_request, user1)
         screenshot3 = Screenshot.objects.create(caption=caption_3,
                                                 image='')
         draft.screenshots.add(screenshot3)

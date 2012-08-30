@@ -714,6 +714,7 @@ def review_detail(request,
             'can_edit_review_request': review_request.is_mutable_by(request.user),
         })))
     set_etag(response, etag)
+
     return response
 
 

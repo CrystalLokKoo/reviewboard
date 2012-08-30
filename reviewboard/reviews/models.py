@@ -631,7 +631,8 @@ class ReviewRequest(BaseReviewRequestDetails):
             return get_object_or_none(self.draft)
         elif user.is_authenticated():
             return get_object_or_none(self.draft,
-                                      draft_creator=user)
+                                      Q(draft_creator=user) | \
+                                      Q(review_request__submitter=user))
 
         return None
 
@@ -888,7 +889,9 @@ class ReviewRequest(BaseReviewRequestDetails):
                         profile__starred_review_requests=self,
                         local_site=self.local_site))
 
-        draft = get_object_or_none(self.draft, draft_creator=user)
+        draft = get_object_or_none(self.draft,
+                                   Q(draft_creator=user) | \
+                                   Q(review_request__submitter=user))
         if draft is not None:
             # This will in turn save the review request, so we'll be done.
             changes = draft.publish(self, send_notification=False, user=user)
