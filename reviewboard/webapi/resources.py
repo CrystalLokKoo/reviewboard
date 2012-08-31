@@ -1622,7 +1622,8 @@ class DiffResource(WebAPIResource):
 
         try:
             diffset = form.create(request.FILES['path'],
-                                  request.FILES.get('parent_diff_path'), request.user)
+                                  request.FILES.get('parent_diff_path'),
+                                  request.user)
         except FileNotFoundError, e:
             return REPO_FILE_NOT_FOUND, {
                 'file': e.path,
@@ -3061,7 +3062,8 @@ class BaseScreenshotResource(WebAPIResource):
             }
 
         try:
-            screenshot = form.create(request.FILES['path'], review_request, request.user)
+            screenshot = form.create(request.FILES['path'], review_request,
+                                     request.user)
         except ValueError, e:
             return INVALID_FORM_DATA, {
                 'fields': {
