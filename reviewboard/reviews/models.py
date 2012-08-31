@@ -616,10 +616,8 @@ class ReviewRequest(BaseReviewRequestDetails):
 
     def is_mutable_by(self, user):
         "Returns true if the user can modify this review request"
-        return (self.submitter == user or
-                user.has_perm('reviews.can_edit_reviewrequest') or
-                self.target_people.filter(id=user.id).exists() or
-                self.target_groups.filter(users__id=user.id).exists())
+        return self.submitter == user or \
+               user.has_perm('reviews.can_edit_reviewrequest')
 
     def get_draft(self, user=None):
         """

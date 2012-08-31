@@ -2576,7 +2576,8 @@ class ReviewRequestDraftResourceTests(BaseWebAPITestCase):
 
     def test_put_reviewrequestdraft_with_admin(self):
         """Testing the PUT review-requests/<id>/draft/ API with Admin user"""
-        review_request = ReviewRequest.objects.from_user('admin')[0]
+        self._login_user(admin=True)
+        review_request = ReviewRequest.objects.from_user(self.user.username)[0]
         branch_name = 'branch_foo'
         rsp = self.apiPut(self.get_url(review_request), {
             'branch': branch_name,
@@ -2587,20 +2588,6 @@ class ReviewRequestDraftResourceTests(BaseWebAPITestCase):
 
         draft = ReviewRequestDraft.objects.get(pk=rsp['draft']['id'])
         self.assertEqual(draft.branch, branch_name)
-
-    def test_put_reviewrequestdraft_with_normal_user(self):
-        """Testing the PUT review-requests/<id>/draft/ API with Admin user"""
-        review_request = ReviewRequest.objects.from_user(self.user.username)[0]
-        bugs = 12312
-        rsp = self.apiPut(self.get_url(review_request), {
-            'bugs': bugs,
-        }, expected_mimetype=self.item_mimetype)
-
-        self.assertEqual(rsp['stat'], 'ok')
-        self.assertEqual(rsp['draft']['bugs'], bugs)
-
-        draft = ReviewRequestDraft.objects.get(pk=rsp['draft']['id'])
-        self.assertEqual(draft.bugs, bugs)
 
     def test_put_reviewrequestdraft_with_permission_denied_error(self):
         """Testing the PUT review-requests/<id>/draft/ API with Permission Denied error"""
