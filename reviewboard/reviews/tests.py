@@ -830,7 +830,8 @@ class DraftTests(TestCase):
     def getDraft(self):
         """Convenience function for getting a new draft to work with."""
         return ReviewRequestDraft.create(ReviewRequest.objects.get(
-            summary="Add permission checking for JSON API"), User.objects.get(pk=1))
+            summary="Add permission checking for JSON API"),
+            User.objects.get(username='admin'))
 
 
 class FieldTests(TestCase):
