@@ -49,8 +49,7 @@
   }
 
   .content {
-    margin: 5px;
-    padding: 0;
+    padding: @box-padding;
 
     &.sliding {
       margin-top: -5px;
@@ -62,7 +61,6 @@
 
     label {
       display: block;
-      margin-top: 20px;
       min-height: 15px;
 
       img {
@@ -83,10 +81,15 @@
     border-top: 1px #C2C1B0 solid;
   }
 
+  .main {
+    clear: both;
+    padding: 0;
+  }
+
   #required-field-legend {
     color: darkRed;
     font-weight: bold;
-    padding: 12px 0;
+    padding: @box-padding;
   }
 
   .controls {
@@ -115,7 +118,7 @@
   }
 
   .header {
-    margin: 5px;
+    padding: @box-padding;
   }
 
   .star {
@@ -127,8 +130,7 @@
     border-bottom: 1px #c2c1b0 solid;
     border-spacing: 8px;
     border-top: 1px #c2c1b0 solid;
-    margin-top: 5px;
-    padding: 5px 0;
+    padding: @box-padding;
     width: 100%;
 
     .caption {
@@ -151,12 +153,15 @@
     }
 
     #review-request-warning {
-      background-color: #F5A9A9;
-      border: 1px solid #FF0000;
       display: none;
-      font-weight: bold;
-      padding: 5px;
-      text-align: center;
+
+      td {
+        background-color: #F5A9A9;
+        border: 1px solid #FF0000;
+        font-weight: bold;
+        padding: 5px;
+        text-align: center;
+      }
     }
   }
 
@@ -189,11 +194,18 @@
     }
   }
 
+  .actions-container {
+    background: @review-request-actions-bg;
+    border-bottom: 1px @review-request-actions-border-color solid;
+    float: right;
+    width: 100%;
+    .border-radius(@box-inner-border-radius @box-inner-border-radius 0 0);
+  }
+
   .actions {
-    border-right: 1px #000000 solid;
     float: right;
     list-style: none;
-    margin: -1px -1px 0 0;
+    margin: 0;
     padding: 0;
     white-space: nowrap;
 
@@ -201,8 +213,10 @@
       color: black;
       cursor: pointer;
       display: block;
-      padding: 4px 8px;
       text-decoration: none;
+      padding: 4px 8px;
+
+      border-left: 1px @review-request-action-border-color solid;
     }
 
     img {
@@ -210,69 +224,78 @@
     }
 
     li {
-      background: #dfb16a url("../images/review_request_action_bg.png") repeat-x top left;
-      border: 1px black solid;
-      border-right: 0;
       float: left;
-
-      &:active {
-        background-color: #e8c894;
-        background-image: url("../images/review_request_action_bg_clicked.png");
-      }
+      margin: 0;
+      padding: 0;
 
       &:hover {
-        background-color: #e8c896;
-        background-image: url("../images/review_request_action_bg_hover.png");
+        background-color: @review-request-action-hover-bg;
+      }
+
+      &:active {
+        background-color: @review-request-action-active-bg;
       }
 
       &.primary {
-        background-color: #e7c591;
-        background-image: url("../images/review_request_action_primary_bg.png");
+        background-color: @review-request-action-primary-bg;
       }
 
       &.primary:hover {
-        background-color: #eed6b1;
-        background-image: url("../images/review_request_action_primary_bg_hover.png");
+        background-color: @review-request-action-primary-hover-bg;
       }
 
       &.primary:active {
-        background-color: #eed6af;
-        background-image: url("../images/review_request_action_primary_bg_clicked.png");
+        background-color: @review-request-action-primary-active-bg;
       }
     }
 
+    .menu-title {
+      background: url("../images/dropdown.png") no-repeat 100% 60%;
+      margin-right: 0.6em;
+      padding-right: 1.2em;
+    }
+
     .menu {
-      background: #dfb16a url("../images/review_request_action_bg.png") repeat-x top left;
-      border: 1px black solid;
+      background: @review-request-action-menu-bg;
+      border: 1px @review-request-action-menu-border-color solid;
+      float: none;
       list-style: none;
       margin: 0;
       padding: 0;
       position: absolute;
+      z-index: @z-index-menu;
+      .border-radius(0 0 @box-border-radius @box-border-radius);
+      .box-shadow(@box-shadow);
 
       li {
-        background: none;
+        background: @review-request-action-bg;
         border: 0;
         float: none;
         margin: 0;
         padding: 0;
 
+        &:last-child {
+          .border-radius(0 0 @box-border-radius @box-border-radius);
+        }
+
+        &:hover {
+          background-color: @review-request-action-menu-item-hover-bg;
+        }
+
         a {
           color: black;
+          border: 0;
           display: block;
           margin: 0;
           padding: 5px 10px;
           text-decoration: none;
-
-          &:hover {
-            background-color: #c79343;
-          }
         }
       }
     }
   }
 
-  .actions>li:first-child {
-    .border-radius(0 0 0 8px);
+  .actions>li:last-child {
+    .border-radius(0 @box-inner-border-radius 0 0);
   }
 
   #updated_time, #created_time {
@@ -286,7 +309,7 @@
 
   .required-flag {
     color: darkRed;
-    font-size: 14px;
+    font-size: 10px;
     font-weight: bold;
     padding: 0 2px;
   }
@@ -312,6 +335,10 @@
     .body {
       display: none;
     }
+
+    .banner {
+      margin-bottom: 0;
+    }
   }
 
   .collapse-button {
@@ -327,6 +354,14 @@
 .review {
   background-color: #e9edf5;
   background-image: url('../images/review_box_top_bg.png');
+
+  .banner {
+    margin-top: 10px;
+
+    &.floating {
+      margin-top: 0;
+    }
+  }
 
   .body {
     background-color: #FAFAFA;
@@ -512,6 +547,7 @@
     position: relative;
     width: 4.5em;
     top: -8px;
+    .border-radius(@box-border-radius 0 @box-border-radius 0);
   }
 }
 
@@ -668,14 +704,24 @@
   height: 13em;
   position: relative;
   margin: 0 2em 2em 0;
-  .border-radius(0 0 8px 8px);
+  .border-radius(@box-border-radius);
+
+  .actions {
+    li {
+      a {
+        .border-radius(0 @box-inner-border-radius 0 @box-inner-border-radius);
+        border-left: 1px @review-request-action-border-color solid;
+        border-bottom: 1px @review-request-action-border-color solid;
+      }
+    }
+  }
 
   .file-header {
     background: white;
     padding: 0.5em 10em 0.5em 0.5em;
     line-height: 2.5em;
-    -width: 30em;
     white-space: nowrap;
+    .border-radius(@box-border-radius @box-border-radius 0 0);
 
     a {
       color: blue;
@@ -734,7 +780,7 @@
   border: 1px #999999 solid;
   border-top: 1px #CCCCCC solid;
   padding: 2px 8px;
-  .border-radius(0 0 8px 8px);
+  .border-radius(0 0 @box-border-radius @box-border-radius);
 
   img {
     vertical-align: bottom;
@@ -752,6 +798,7 @@
   text-align: center;
   vertical-align: middle;
   position: relative;
+  .border-radius(@box-border-radius);
 
   &:hover {
     background-color: #F6F6F6;
@@ -774,6 +821,7 @@
     line-height: 100px;
     margin: 0 auto;
     vertical-align: bottom;
+    .border-radius(@box-border-radius @box-border-radius 0 0);
 
     &.loading {
       background: white url("../images/spinner.gif") no-repeat center center;
@@ -781,6 +829,7 @@
 
     img {
       vertical-align: middle;
+      .border-radius(@box-inner-border-radius @box-inner-border-radius 0 0);
     }
   }
 }
@@ -825,7 +874,7 @@
     position: absolute;
     margin: 0;
     padding: 0;
-    z-index: 999;
+    z-index: @z-index-event-overlay;
   }
 
   #selection-interactive {
@@ -859,7 +908,7 @@
   background: black;
   text-align: center;
   vertical-align: middle;
-  z-index: 100;
+  z-index: @z-index-page-overlay;
   color: #DDDDDD;
 
   .dropbox {
@@ -936,6 +985,8 @@
   }
 
   h1 {
+    background: transparent;
+    border: 0;
     margin: 0 0 6px 0;
     padding: 0;
   }
@@ -951,7 +1002,7 @@
     padding: 0.5em;
     position: absolute;
     right: -1px;
-    z-index: 2;
+    z-index: @z-index-deco;
   }
 
   .status {
@@ -1083,10 +1134,17 @@
 #submitted-banner {
   background: #E0E0E0;
   border: 1px #808080 solid;
+  .border-radius(@box-border-radius);
+  .box-shadow(@box-shadow);
+}
+
+#draft-banner {
+  .border-radius(@box-border-radius);
+  .box-shadow(@box-shadow);
 }
 
 #review-banner {
-  padding-bottom: 4.5em;
+  padding-bottom: 4em;
 
   .banner {
     border-left: 0;
@@ -1096,7 +1154,8 @@
     position: fixed;
     top: 0;
     width: 100%;
-    z-index: 1000;
+    z-index: @z-index-banner;
+    .box-shadow(@box-shadow);
   }
 }
 
@@ -1154,7 +1213,7 @@
   padding: 6px;
   position: absolute;
   white-space: nowrap;
-  z-index: 999;
+  z-index: @z-index-dialog;
   .border-radius(8px);
 }
 

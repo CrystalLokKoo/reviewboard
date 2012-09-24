@@ -81,11 +81,11 @@ ul.errorlist {
  * Banners
  ****************************************************************************/
 .banner {
-  background: #cdff9c;
-  border: 1px #4e9a06 solid;
+  background: @draft-bg-color;
+  border: 1px @draft-border-color solid;
   margin-bottom: 10px;
   padding: 8px 10px;
-  z-index: 999;
+  z-index: @z-index-banner;
 
   h1 {
     display: inline;
@@ -107,7 +107,9 @@ ul.errorlist {
   background-image: url('../images/box_top_bg.png');
   background-position: top left;
   background-repeat: repeat-x;
-  border: 1px #888A85 solid;
+  border: 1px @box-border-color solid;
+  .border-radius(@box-border-radius);
+  .box-shadow(@box-shadow);
 }
 
 .box.important {
@@ -145,10 +147,11 @@ ul.errorlist {
 
   .box-inner {
     background: transparent;
+    position: relative;
   }
 
   h1 {
-    padding-left: 0;
+    padding-left: 2.5em;
   }
 
   img {
@@ -156,8 +159,8 @@ ul.errorlist {
     left: -5px;
     margin: 0;
     padding: 0;
-    position: relative;
-    top: -23px;
+    position: absolute;
+    top: -20px;
   }
 }
 
@@ -165,13 +168,14 @@ ul.errorlist {
   cursor: pointer;
 }
 
-.box h1.title,
+h1.title,
 .modalbox-title {
-  background: #a2bedc url('../images/title_box_top_bg.png') repeat-x top left;
+  background: @box-title-bg;
   border-bottom: 1px #728eac solid;
   margin: 0;
   padding: 5px 10px 5px 5px;
   font-size: 120%;
+  .border-radius(@box-border-radius @box-border-radius 0 0);
 }
 
 .box .main {
@@ -179,7 +183,6 @@ ul.errorlist {
 }
 
 .box-container {
-  border: 1px #DCDCDC solid;
   margin-bottom: 10px;
   width: 100%;
 }
@@ -190,6 +193,7 @@ ul.errorlist {
   background-position: bottom left;
   background-repeat: repeat-x;
   padding-bottom: 1px; /* IE wants this and it does no harm. */
+  .border-radius(@box-border-radius);
 }
 
 .box-inner form {
@@ -198,7 +202,15 @@ ul.errorlist {
 
 .datagrid-title,
 .datagrid-titlebox {
-  background: #a2bedc url('../images/title_box_top_bg.png') repeat-x top left;
+  background: @box-title-bg !important;
+}
+
+.datagrid-header {
+  border-top: 0 !important;
+}
+
+.datagrid-menu {
+  border: 1px #888A85 solid;
 }
 
 .datagrid .shipit-count {
@@ -212,9 +224,7 @@ ul.errorlist {
   font-weight: bold;
   padding: 0.05em 0.5em;
   white-space: nowrap;
-  -moz-border-radius: 10px;
-  -webkit-border-radius: 8px; /* WebKit bug */
-  border-radius: 10px;
+  .border-radius(10px);
 }
 
 .server-error-box .response-data {
@@ -370,17 +380,145 @@ form table td {
   }
 }
 
+#headerbar {
+  background: @headerbar-bg;
+  border-bottom: 1px #DDDDDD solid;
+  color: white;
+  margin: 0;
+  padding: @headerbar-padding;
+
+  br {
+    clear: both;
+    height: 0;
+  }
+
+  #title {
+    color: white;
+    display: inline;
+    font-weight: normal;
+    font-size: 120%;
+    vertical-align: middle;
+    margin: 0;
+    padding: 0;
+
+    a {
+      color: white;
+      font-size: 120%;
+      text-decoration: none;
+    }
+
+    .version {
+      color: #E0E0E0;
+      font-weight: normal;
+      font-size: 90%;
+    }
+  }
+
+  #logo {
+    position: absolute;
+    top: 0px;
+    left: @headerbar-logo-padding-horiz;
+  }
+
+  #search {
+   float: right;
+   margin: 0 1em;
+
+   input {
+     border: 1px black solid;
+     margin: 0;
+     padding: 2px;
+     .border-radius(6px);
+     background-color: #EEEEEE;
+   }
+  }
+}
+
+#rbinfo {
+  float: left;
+  position: absolute;
+  left: 0;
+  padding-top: 0.2em;
+  padding-left: @headerbar-padding-left;
+
+  img {
+    display: inline;
+    vertical-align: middle;
+  }
+}
+
 #accountnav {
   list-style: none;
   margin: 0;
-  padding: 0.5em;
-  text-align: right;
-  position: relative;
-  z-index: 1;
-  border-bottom: 1px #DDDDDD solid;
+  padding: 0;
+  z-index: @z-index-base;
+  float: right;
 
   li {
-    display: inline;
+    display: block;
+    float: right;
+    margin: -@headerbar-padding 0;
+    padding: 0;
+    position: relative;
+    white-space: nowrap;
+
+    &:hover {
+      background: @headerbar-bg-active;
+
+      ul {
+        display: block;
+        z-index: @z-index-menu;
+      }
+    }
+
+    a {
+      color: white;
+      display: block;
+      font-size: 120%;
+      margin: 0;
+      padding: 0 1em;
+      text-decoration: none;
+      height: 32px;
+      vertical-align: middle;
+      line-height: 32px;
+
+      &.user-nav-item {
+        padding-left: 0.2em;
+      }
+    }
+
+    img {
+      display: inline;
+      vertical-align: middle;
+      margin: 0;
+      padding: 0;
+    }
+
+    ul {
+      background-color: @headerbar-bg;
+      display: none;
+      margin: 0;
+      min-width: @headerbar-menu-min-width;
+      padding: 0;
+      position: absolute;
+      right: 0;
+      .border-radius(0 0 @box-border-radius @box-border-radius);
+
+      li {
+        float: none;
+        margin: 0;
+        padding: 0;
+        text-align: right;
+
+        &:hover {
+          .border-radius(0 0 @box-border-radius @box-border-radius);
+        }
+
+        a {
+          margin: 0;
+        }
+      }
+    }
   }
 }
 
@@ -399,7 +537,7 @@ form table td {
   margin-left: -3em;
   padding: 0.5em 0.6em 0.5em 2.2em;
   width: 6em;
-  z-index: 20000;
+  z-index: @z-index-spinner;
 
   &.error {
     background-color: #ffcd9c;
@@ -439,29 +577,24 @@ form table td {
   font-size: 9pt;
 }
 
-#navbar-outer {
-  border: 1px #E0E0E0 solid;
-  margin: 10px 0;
-  width: 100%;
-}
-
 #navbar {
-  background-color: #C6DCF3;
-  border: 1px #3465A4 solid;
+  background: @navbar-bg;
+  border-bottom: 1px @navbar-border-color solid;
   list-style: none;
-  margin: 0;
-  padding: 9px 6px;
+  margin: 0 0 1em 0;
+  min-height: 1.5em;
+  padding: @headerbar-padding;
+  padding-left: @headerbar-padding-left;
 
   li {
     display: inline;
     height: 30px;
-    margin-right: 14px;
+    margin: 0 1em 0 0;
   }
 
   a {
-    color: #0000AA;
+    color: @navbar-text-color;
     font-size: 110%;
-    font-weight: bold;
     text-decoration: none;
   }
 
@@ -470,42 +603,22 @@ form table td {
   }
 }
 
-#page-container {
-  padding: 0 0.8em 0.8em 0.8em;
+body.admin #navbar {
+  background: url("../images/admin/yellow_bg_small.png") repeat-x #F9F2C9;
+
+  a {
+    color: black;
+  }
 }
 
-#rbinfo {
-  position: relative;
-  padding-left: 0.8em;
-
-  img {
-    display: inline;
-    vertical-align: middle;
-  }
+#page-container {
+  padding: 0 0.8em 0.8em 0.8em;
 }
 
 #searchbar {
   position: absolute;
   right: 0;
   margin-top: -3px;
-}
-
-#title {
-  display: inline;
-  vertical-align: middle;
-  font-size: 24pt;
-  font-weight: normal;
-
-  a {
-    color: black;
-    text-decoration: none;
-  }
-
-  .version {
-    color: #808080;
-    font-size: 12pt;
-    font-weight: normal;
-  }
 }
 
 
@@ -519,7 +632,7 @@ form table td {
   overflow: hidden;
   position: absolute;
   width: 100%;
-  z-index: 9050;
+  z-index: @z-index-menu;
 
   ul {
     margin: 0;
@@ -566,11 +679,9 @@ form table td {
   padding: 1em;
   position: absolute;
   min-width: 30em;
-  z-index: 25;
-  -moz-border-radius: 10px;
-  -webkit-border-radius: 8px; /* WebKit bug */
-  border-radius: 10px;
-  .box-shadow (0px 0px 4px #000);
+  z-index: @z-index-dialog;
+  .border-radius(10px);
+  .box-shadow(0px 0px 4px #000);
 
   &.loading {
     background-image: url("../images/spinner.gif");

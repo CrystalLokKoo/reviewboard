@@ -31,18 +31,20 @@
 
 {% box "review-request" %}
 
-<ul class="actions">
+<div class="actions-container">
+ <ul class="actions">
 {% review_request_action_hooks %}
 {% review_request_dropdown_action_hooks %}
 {% include "reviews/review_request_actions_secondary.html" %}
 {% if has_diffs %}
- <li class="primary"><a href="diff/raw/">{% trans "Download Diff" %}</a></li>
+  <li class="primary"><a href="diff/raw/">{% trans "Download Diff" %}</a></li>
 {% endif %}
 {% include "reviews/review_request_actions_primary.html" %}
 {% if has_diffs %}
- <li class="primary"><a href="diff/#index_header">{% trans "View Diff" %}</a></li>
+  <li class="primary"><a href="diff/#index_header">{% trans "View Diff" %}</a></li>
 {% endif %}
-</ul>
+ </ul>
+</div>
 
 <div class="main">
 {% include "reviews/review_request_box.html" %}
@@ -77,7 +79,6 @@
 {% definevar "boxclass" %}review {{entry.class}}{% enddefinevar %}
 {% box boxclass %}
 <div class="main">
- <div class="banners"></div>
  <div class="header">
   {% template_hook_point "review-summary-header-pre" %}
   {% if entry.review.ship_it %}<div class="shipit">{% trans "Ship it!" %}</div>{% endif %}
@@ -86,6 +87,7 @@
   <div class="posted_time">{% localtime on %}{% blocktrans with entry.review.timestamp as timestamp and entry.review.timestamp|date:"c" as timestamp_raw %}Posted <time class="timesince" datetime="{{timestamp_raw}}">{{timestamp}}</time> ({{timestamp}}){% endblocktrans %}{% endlocaltime %}</div>
   {% template_hook_point "review-summary-header-post" %}
  </div>
+ <div class="banners"></div>
  <div class="body">
    <pre class="body_top reviewtext">{{entry.review.body_top|escape}}</pre>
    {% reply_section entry "" "body_top" "rcbt" %}

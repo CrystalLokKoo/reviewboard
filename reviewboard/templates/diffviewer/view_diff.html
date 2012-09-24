@@ -58,19 +58,22 @@
 {% include "reviews/review_header.html" %}
 
 {% box "review-request" %}
-<ul class="actions">
+<div class="actions-container">
+ <ul class="actions">
 {% include "reviews/review_request_actions_secondary.html" %}
 {% diffviewer_action_hooks %}
 {% if not interdiffset %}
- <li class="primary"><a href="raw/">{% trans "Download Diff" %}</a></li>
+  <li class="primary"><a href="raw/">{% trans "Download Diff" %}</a></li>
 {% endif %}
 {% include "reviews/review_request_actions_primary.html" %}
- <li class="primary"><a href="{{review_request.get_absolute_url}}">{% trans "View Reviews" %}</a></li>
-</ul>
+  <li class="primary"><a href="{{review_request.get_absolute_url}}">{% trans "View Reviews" %}</a></li>
+ </ul>
+</div>
+
 <div class="main">
 {% include "reviews/review_request_box.html" %}
 
-<div id="diff-details">
+<div id="diff-details" class="content">
 <a name="index_header"></a>
 {% with latest_diffset.revision as latest_revision %}
 {% with diffset.revision as revision %}

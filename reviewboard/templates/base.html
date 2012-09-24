@@ -4,6 +4,7 @@
 {% load djblets_deco %}
 {% load djblets_extensions %}
 {% load djblets_utils %}
+{% load gravatars %}
 {% load i18n %}
 {% load rb_extensions %}
 {% load staticfiles %}
@@ -22,6 +23,7 @@
             'rb/images/edit.png': '{% static "rb/images/edit.png" %}',
             'rb/images/favicon_notify.ico': '{% static "rb/images/favicon_notify.ico" %}',
             'rb/images/resize-grip.png': '{% static "rb/images/resize-grip.png" %}',
+            'rb/images/spinner.gif': '{% static "rb/images/spinner.gif" %}',
             'rb/images/star_off.png': '{% static "rb/images/star_off.png" %}',
             'rb/images/star_on.png': '{% static "rb/images/star_on.png" %}'
         },
@@ -40,13 +42,13 @@
   <!--[if lt IE 7.]>
   <style type="text/css">
     body {
-      behavior: url("{% static "rb/js/csshover2.htc" %}");
+      behavior: url("{% static "lib/js/csshover2.htc" %}");
     }
 
     img,
     table.sidebyside .commentflag,
     .box.important .box-inner {
-      behavior: url("{% static "rb/js/pngfix.htc" %}");
+      behavior: url("{% static "lib/js/pngfix.htc" %}");
     }
 {% block ie6_csshacks %}{% endblock %}
   </style>
@@ -65,58 +67,65 @@
   <div id="container">
 {% block headerbar %}
    <div id="headerbar">
+{% include "base/branding.html" %}
     <ul id="accountnav">
+     <li>
+      <a href="#">Support</a>
+      <ul>
+       <li><a href="http://www.reviewboard.org/docs/manual/dev/">{% trans "Documentation" %}</a></li>
+       <li><a href="http://www.reviewboard.org/bugs/">{% trans "Bugs" %}</a></li>
+       <li><a href="http://www.reviewboard.org/bugs/new/">{% trans "Report bug" %}</a></li>
+      </ul>
+     </li>
 {% if user.is_authenticated %}
-{%  blocktrans with user|realname|escape as username %}
-     <li>Welcome, <b>{{username}}</b></li>
-{% endblocktrans %}
-     <li>- <a href="{% url user-preferences %}">{% trans "My account" %}</a></li>
+     <li>
+      <a class="user-nav-item" href="{% url user-preferences %}">{% gravatar user 32 %} {{user.first_name}}</a>
+      <ul>
+       <li><a href="{% url user-preferences %}">{% trans "My account" %}</a></li>
 {%  if user.is_staff %}
-     <li>- <a href="{% url reviewboard.admin.views.dashboard %}">{% trans "Admin" %}</a></li>
+       <li><a href="{% url reviewboard.admin.views.dashboard %}">{% trans "Admin" %}</a></li>
 {%  endif %}
-     <li>- <a href="{% url logout %}">{% trans "Log out" %}</a></li>
+       <li><a href="{% url logout %}">{% trans "Log out" %}</a></li>
+      </ul>
+     </li>
 {% else %}
      <li><a href="{% url login %}?next_page={{request.path}}">{% trans "Log in" %}</a></li>
 {#  XXX Using default sucks, but siteconfig defaults don't #}
 {#      work from templates.                               #}
 {%  if auth_backends.0.supports_registration and siteconfig.settings.auth_enable_registration|default_if_none:1 %}
-     <li>- <a href="{% url register %}">{% trans "Register" %}</a></li>
+     <li><a href="{% url register %}">{% trans "Register" %}</a></li>
 {%  endif %}
 {% endif %}{# !is_authenticated #}
-     <li>- <a href="http://www.reviewboard.org/docs/manual/dev/">{% trans "Documentation" %}</a></li>
-     <li>- <a href="http://www.reviewboard.org/bugs/">{% trans "Bugs" %}</a></li>
-     <li>- <a href="http://www.reviewboard.org/bugs/new/">{% trans "Report bug" %}</a></li>
     </ul>
-    <br />
-   {% include "base/branding.html" %}
-   </div>
-   <div id="page-container">
-{% template_hook_point "base-before-navbar" %}
-{% block navbar %}
-   {% if user.is_authenticated or not siteconfig.settings.auth_require_sitewide_login %}
-    {% if siteconfig.settings.search_enable %}<form method="get" action="{% url search %}">{% endif %}
-     <div id="navbar-outer">
-      <ul id="navbar">
-{% if user.is_authenticated %}
-       <li><a href="{% url dashboard %}">{% trans "My Dashboard" %}</a></li>
-       <li><a href="{% url new-review-request %}">{% trans "New Review Request" %}</a></li>
-       <li>-</li>
+    <div id="search">
+{% if siteconfig.settings.search_enable %}
+    <form method="get" action="{% url search %}">
 {% endif %}
-       <li><a href="{% url all-review-requests %}">{% trans "All review requests" %}</a></li>
-       <li><a href="{% url all-groups %}">{% trans "Groups" %}</a></li>
-       <li><a href="{% url all-users %}">{% trans "Submitters" %}</a></li>
-{% navigation_bar_hooks %}
-       <li id="searchbar">
-       <input type="text" name="q" id="search_field" {% attr "value" %}{{query}}{% endattr %} />
-       {% if siteconfig.settings.search_enable %}
-        <input type="submit" value="{% trans "Search" %}" />
-       {% endif %}
-       </li>
-      </ul>
-     </div>
-     {% if siteconfig.settings.search_enable %}</form>{% endif %}
-    {% endif %}
+     <input type="text" name="q" placeholder="{% if siteconfig.settings.search_enable %}{% trans "Search" %}{% else %}{% trans "Jump to..." %}{% endif %}" id="search_field" {% attr "value" %}{{query}}{% endattr %} />
+{% if siteconfig.settings.search_enable %}
+    </form>
+{% endif %}
+    </div>
+
+    <br />
+   </div>
+{% template_hook_point "base-before-navbar" %}
+
+{% block navbar %}
+   <ul id="navbar">
+{%  if user.is_authenticated or not siteconfig.settings.auth_require_sitewide_login %}
+{%   if user.is_authenticated %}
+    <li><a href="{% url dashboard %}">{% trans "My Dashboard" %}</a></li>
+    <li><a href="{% url new-review-request %}">{% trans "New Review Request" %}</a></li>
+{%   endif %}
+    <li><a href="{% url all-review-requests %}">{% trans "All review requests" %}</a></li>
+    <li><a href="{% url all-groups %}">{% trans "Groups" %}</a></li>
+    <li><a href="{% url all-users %}">{% trans "Submitters" %}</a></li>
+{%   navigation_bar_hooks %}
+{%  endif %}
+   </ul>
 {% endblock %}
+   <div id="page-container">
 {% endblock %}
     <noscript>
 {%  box "important" %}
@@ -131,14 +140,19 @@
     </noscript>
     <div id="error"></div>
     {% template_hook_point "base-after-navbar" %}
-    <div id="content">
+	<div id="container">
+     {% block contenttag %}<div id="content">{% endblock %}
 {% template_hook_point "base-before-content" %}
-{% block content %}{% endblock %}
+{% block main_content %}
+{%  block content %}{% endblock %}
+{% endblock %}
 {% template_hook_point "base-after-content" %}
+     </div>
     </div>
    </div>
   </div>
   {% include "js/jquery-ui.html" %}
+  {% compressed_js "3rdparty" %}
   <script type="text/javascript" src="{% static "djblets/js/jquery.gravy.js" %}"></script>
   {% compressed_js "common" %}
 {% block scripts-post %}{% endblock %}

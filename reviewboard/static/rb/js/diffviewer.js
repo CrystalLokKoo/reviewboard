@@ -122,7 +122,7 @@ function DiffCommentBlock(beginRow, endRow, beginLineNum, endLineNum,
             return false;
         });
 
-    $(window).bind("resize", function(evt) {
+    $(window).on("resize", function(evt) {
         self.updateSize();
     });
 
@@ -465,9 +465,8 @@ $.fn.diffFile = function(lines, key) {
                  *
                  * @param {event} e  The mouseout event.
                  */
-                var relTarget = e.relatedTarget;
-                var node = getActualLineNumCell($(e.fromElement ||
-                                                  e.originalTarget));
+                var relTarget = e.relatedTarget,
+                    node = getActualLineNumCell($(e.target));
 
                 if (relTarget != ghostCommentFlag[0]) {
                     ghostCommentFlag.hide();
@@ -487,25 +486,27 @@ $.fn.diffFile = function(lines, key) {
                     node.parent().removeClass("selected");
                 }
             })
-            .bind("touchmove", function(e) {
-                var firstTouch = e.originalEvent.targetTouches[0];
-                var target = document.elementFromPoint(firstTouch.pageX,
-                                                       firstTouch.pageY);
-                var node = getActualLineNumCell($(target));
-                var row = node.parent();
-
-                if (selection.lastSeenIndex == row[0].rowIndex) {
-                    return;
-                }
-
-                if (isLineNumCell(node[0])) {
+            .on({
+                "touchmove": function(e) {
+                    var firstTouch = e.originalEvent.targetTouches[0];
+                    var target = document.elementFromPoint(firstTouch.pageX,
+                                                        firstTouch.pageY);
+                    var node = getActualLineNumCell($(target));
                     var row = node.parent();
-                    removeOldRowsFromSelection(row);
-                    addRowToSelection(row);
+
+                    if (selection.lastSeenIndex == row[0].rowIndex) {
+                        return;
+                    }
+
+                    if (isLineNumCell(node[0])) {
+                        var row = node.parent();
+                        removeOldRowsFromSelection(row);
+                        addRowToSelection(row);
+                    }
+                },
+                "touchcancel": function(e) {
+                    resetSelection();
                 }
-            })
-            .bind("touchcancel", function(e) {
-                resetSelection();
             })
             .proxyTouchEvents("touchstart touchend");
 
@@ -824,9 +825,10 @@ $.fn.highlightChunk = function() {
         }
     }
 
-    $(document).bind("DOMNodeInserted.highlightChunk", queueUpdatePosition);
-    $(document).bind("DOMNodeRemoved.highlightChunk", queueUpdatePosition);
-    $(window).bind("resize.highlightChunk", updatePosition);
+    $(document)
+        .on("DOMNodeInserted.highlightChunk DOMNodeRemoved.highlightChunk",
+            queueUpdatePosition);
+    $(window).on("resize.highlightChunk", updatePosition);
 
     if (firstHighlight) {
         /*
@@ -849,7 +851,7 @@ $.fn.highlightChunk = function() {
  * @param {bool}   scroll  If true, scrolls the page to the anchor.
  */
 function gotoAnchor(name, scroll) {
-    return scrollToAnchor($("a[name=" + name + "]"), scroll || false);
+    return scrollToAnchor($("a[name='" + name + "']"), scroll || false);
 }
 
 

@@ -194,21 +194,23 @@ $.fn.formDlg = function(options) {
 
 
 /*
- * Toggles whether an object is starred. Right now, we support
- * "reviewrequests" and "groups" types. Loads parameters from
- * data attributes on the element. Attaches via 'live' so it applies
- * to future stars matching the current jQuery selector.
+ * Registers handlers for the toggleable stars.
+ *
+ * These will listen for when a star is clicked, which will toggle
+ * whether an object is starred. Right now, we support "reviewrequests"
+ * and "groups" types. Loads parameters from data attributes on the element.
+ * Attaches at the document level so it applies to future stars.
  *
  * @param {string} object-type  The type used for constructing the path.
  * @param {string} object-id    The object ID to star/unstar.
  * @param {bool}   starred      The default value.
  */
-$.fn.toggleStar = function() {
+function registerToggleStar() {
     // Constants
     var STAR_ON_IMG = STATIC_URLS["rb/images/star_on.png"],
         STAR_OFF_IMG = STATIC_URLS["rb/images/star_off.png"];
 
-    return this.live('click', function() {
+    $(document).on('click', '.star', function() {
         var self = $(this);
 
         var obj = self.data("rb.obj");
@@ -249,73 +251,72 @@ $.fn.toggleStar = function() {
 var SUMMARY_TRIM_LEN = 28;
 
 $.fn.searchAutoComplete = function() {
-    $("#search_field")
-        .autocomplete({
-            formatItem: function(data) {
-                var s;
+    this.autocomplete({
+        formatItem: function(data) {
+            var s;
 
-                if (data.username) {
-                    // For the format of users
-                    s = data.username;
-                    s += " <span>(" + data.fullname + ")</span>";
-                } else if (data.name) {
-                    // For the format of groups
-                    s = data.name;
-                    s += " <span>(" + data.display_name + ")</span>";
-                } else if (data.summary) {
-                    // For the format of review requests
-                    if (data.summary.length < SUMMARY_TRIM_LEN) {
-                        s = data.summary;
-                    } else {
-                        s = data.summary.substring(0, SUMMARY_TRIM_LEN);
-                    }
-
-                    s += " <span>(" + data.id + ")</span>";
+            if (data.username) {
+                // For the format of users
+                s = data.username;
+                s += " <span>(" + data.fullname + ")</span>";
+            } else if (data.name) {
+                // For the format of groups
+                s = data.name;
+                s += " <span>(" + data.display_name + ")</span>";
+            } else if (data.summary) {
+                // For the format of review requests
+                if (data.summary.length < SUMMARY_TRIM_LEN) {
+                    s = data.summary;
+                } else {
+                    s = data.summary.substring(0, SUMMARY_TRIM_LEN);
                 }
 
-                return s;
-            },
-            matchCase: false,
-            multiple: true,
-            clickToURL: true,
-            selectFirst: false,
-            width: 240,
-            parse: function(data) {
-                var jsonData = JSON.parse(data);
-                var jsonDataSearch = jsonData.search;
-                var parsed = [];
-                var objects = ["users", "groups", "review_requests"];
-                var values = ["username", "name", "summary"];
-                var items;
+                s += " <span>(" + data.id + ")</span>";
+            }
 
-                for (var j = 0; j < objects.length; j++) {
-                    items = jsonDataSearch[objects[j]];
+            return s;
+        },
+        matchCase: false,
+        multiple: true,
+        clickToURL: true,
+        selectFirst: false,
+        width: 240,
+        parse: function(data) {
+            var jsonData = JSON.parse(data);
+            var jsonDataSearch = jsonData.search;
+            var parsed = [];
+            var objects = ["users", "groups", "review_requests"];
+            var values = ["username", "name", "summary"];
+            var items;
 
-                    for (var i = 0; i < items.length; i++) {
-                        var value = items[i];
+            for (var j = 0; j < objects.length; j++) {
+                items = jsonDataSearch[objects[j]];
 
-                        if (j != 2) {
-                            parsed.push({
-                                data: value,
-                                value: value[values[j]],
-                                result: value[values[j]]
-                            });
-                        } else if (value.public) {
-                            // Only show review requests that are public
-                            value.url = SITE_ROOT + "r/" + value.id;
-                            parsed.push({
-                                data: value,
-                                value: value[values[j]],
-                                result: value[values[j]]
-                            });
-                        }
+                for (var i = 0; i < items.length; i++) {
+                    var value = items[i];
+
+                    if (j != 2) {
+                        parsed.push({
+                            data: value,
+                            value: value[values[j]],
+                            result: value[values[j]]
+                        });
+                    } else if (value.public) {
+                        // Only show review requests that are public
+                        value.url = SITE_ROOT + "r/" + value.id;
+                        parsed.push({
+                            data: value,
+                            value: value[values[j]],
+                            result: value[values[j]]
+                        });
                     }
                 }
+            }
 
-                return parsed;
-            },
-            url: SITE_ROOT + "api/" + "search/"
-        })
+            return parsed;
+        },
+        url: SITE_ROOT + "api/" + "search/"
+    })
 };
 
 var gUserInfoBoxCache = {};
@@ -381,15 +382,11 @@ $(document).ready(function() {
         .hide()
         .appendTo("body");
 
-    var searchGroupsEl = $("#search_field");
-
-    if (searchGroupsEl.length > 0) {
-        searchGroupsEl.searchAutoComplete();
-    }
-
+    $("#search_field").searchAutoComplete();
     $('.user').user_infobox();
-    $('.star').toggleStar();
     $("time.timesince").timesince();
+
+    registerToggleStar();
 });
 
 // vim: set et:sw=4:

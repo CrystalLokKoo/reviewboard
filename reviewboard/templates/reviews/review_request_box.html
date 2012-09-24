@@ -41,12 +41,12 @@
    <col width="0%" />
    <col width="50%" />
   </colgroup>
-  <tr>
-    <td id="review-request-warning" colspan="4"></td>
+  <tr id="review-request-warning">
+   <td colspan="4"></td>
   </tr>
   <tr>
-   <td class="label"><label for="submitter">{% trans "Submitter" %}:</label></td>
-   <td class="value"><a id="submitter" class="user" href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a></td>
+   <td class="label"><label for="submitter">{% trans "Owner" %}:</label></td>
+   <td class="value"><span id="submitter" class="editable"><a id="submitter" class="user" href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a></span></td>
    <td class="caption" colspan="2">
     {% trans "Reviewers" %}
 {% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
