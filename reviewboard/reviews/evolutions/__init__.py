@@ -11,5 +11,6 @@ SEQUENCE = [
     'default_reviewer_local_site',
     'add_issues_to_comments',
     'file_attachments',
-    'track_user_changes'
+    'track_user_changes',
+    'add_reviewrequest_owner'
 ]

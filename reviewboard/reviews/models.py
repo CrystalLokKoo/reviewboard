@@ -442,6 +442,8 @@ class ReviewRequest(BaseReviewRequestDetails):
 
     submitter = models.ForeignKey(User, verbose_name=_("submitter"),
                                   related_name="review_requests")
+    owner = models.ForeignKey(User, verbose_name="owner", null=True,
+                              related_name="review_requests_owner")
     time_added = models.DateTimeField(_("time added"), default=timezone.now)
     last_updated = ModificationTimestampField(_("last updated"))
     status = models.CharField(_("status"), max_length=1, choices=STATUSES,
