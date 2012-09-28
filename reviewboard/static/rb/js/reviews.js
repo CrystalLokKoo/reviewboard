@@ -442,10 +442,17 @@ function linkifyText(text) {
 
     /* Bug numbers */
     if (gBugTrackerURL != "") {
-        text = text.replace(/\b(bug|issue) (#[^.\s]+|#?\d+)/gi,
-            function(m1, m2, m3) {
-                return '<a target="_blank" href="' + gBugTrackerURL.replace("%s", m3) +
-                       '">' + m1 + '</a>';
+        text = text.replace(/\b(bug|issue) (#([^.\s]+)|#?(\d+))/gi,
+            function(text, m2, m3, bugnum1, bugnum2) {
+                /*
+                 * The bug number can appear in either of those groups,
+                 * depending on how this was typed, so try both.
+                 */
+                var bugnum = bugnum1 || bugnum2;
+
+                return '<a target="_blank" href="' +
+                       gBugTrackerURL.replace("%s", bugnum) +
+                       '">' + text + '</a>';
             });
     }
 
@@ -566,9 +573,8 @@ $.fn.reviewsAutoComplete = function(options) {
                 matchCase: false,
                 multiple: true,
                 parse: function(data) {
-                    var jsonData = eval("(" + data + ")");
-                    var items = jsonData[options.fieldName];
-                    var parsed = [];
+                    var items = data[options.fieldName],
+                        parsed = [];
 
                     for (var i = 0; i < items.length; i++) {
                         var value = items[i];
@@ -1988,6 +1994,12 @@ $.fn.fileAttachment = function() {
                     return false;
                 });
 
+        self.find('.file-review-inline a')
+            .click(function() {
+                showReviewUI();
+                return false;
+            });
+
         self.find("a.delete")
             .click(function() {
                 fileAttachment.ready(function() {
@@ -2015,6 +2027,10 @@ $.fn.fileAttachment = function() {
                     gCommentDlg.open();
                 })
                 .close();
+        }
+
+        function showReviewUI() {
+            /* TODO: Display a lightbox and show the page. */
         }
 
         function processComments() {
