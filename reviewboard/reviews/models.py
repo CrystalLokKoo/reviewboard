@@ -1047,6 +1047,8 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
         verbose_name=_("inactive files"),
         related_name="inactive_drafts",
         blank=True)
+    owner = models.ForeignKey(User, verbose_name="owner", null=True,
+                              related_name="review_requests_draft_owner")
 
     submitter = property(lambda self: self.review_request.submitter)
     repository = property(lambda self: self.review_request.repository)
@@ -1092,6 +1094,7 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
         if draft_is_new:
             map(draft.target_groups.add, review_request.target_groups.all())
             map(draft.target_people.add, review_request.target_people.all())
+            draft.owner = review_request.owner
             for screenshot in review_request.screenshots.all():
                 screenshot.draft_caption = screenshot.caption
                 screenshot.save()
@@ -1170,6 +1173,7 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
         def update_field(a, b, name, record_changes=True):
             # Apparently django models don't have __getattr__ or __setattr__,
             # so we have to update __dict__ directly.  Sigh.
+            import pdb; pdb.set_trace()
             value = b.__dict__[name]
             old_value = a.__dict__[name]
 
@@ -1195,6 +1199,7 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
         update_field(review_request, self, 'description')
         update_field(review_request, self, 'testing_done')
         update_field(review_request, self, 'branch')
+        update_field(review_request, self, 'owner_id')
 
         update_list(review_request.target_groups, self.target_groups,
                     'target_groups', name_field="name")

@@ -2769,6 +2769,7 @@ $(document).ready(function() {
 
             var targetGroupsEl = $("#target_groups");
             var targetPeopleEl = $("#target_people");
+            var ownerEl = $("#owner");
 
             if (targetGroupsEl.length > 0) {
                 targetGroupsEl
@@ -2793,6 +2794,27 @@ $(document).ready(function() {
 
             if (targetPeopleEl.length > 0) {
                 targetPeopleEl
+                    .inlineEditor("field")
+                    .on({
+                        "beginEdit": function() {
+                            gEditCount++;
+                        },
+                        "cancel complete": function() {
+                            gEditCount--;
+                        }
+                    })
+                    .reviewsAutoComplete({
+                        fieldName: "users",
+                        nameKey: "username",
+                        descKey: "fullname",
+                        extraParams: {
+                            fullname: 1
+                        }
+                    });
+            }
+
+            if (ownerEl.length > 0) {
+                ownerEl
                     .inlineEditor("field")
                     .on({
                         "beginEdit": function() {

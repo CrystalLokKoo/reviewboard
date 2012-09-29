@@ -1340,6 +1340,7 @@ class ChangeResource(WebAPIResource):
         'screenshots': Screenshot,
         'target_people': User,
         'target_groups': Group,
+        'owner': User,
     }
 
     def serialize_fields_changed_field(self, obj):
@@ -3606,6 +3607,10 @@ class ReviewRequestDraftResource(WebAPIResource):
             'description': 'A comma-separated list of users that will '
                            'be on a reviewer list.',
         },
+        'owner': {
+            'type': str,
+            'description': 'The owner of the review request.',
+        },
         'testing_done': {
             'type': str,
             'description': 'The new testing done text.',
@@ -3690,6 +3695,10 @@ class ReviewRequestDraftResource(WebAPIResource):
                 'description': 'A comma-separated list of users that will '
                                'be on a reviewer list.',
             },
+            'owner': {
+                'type': str,
+                'description': 'The owner of the review request.',
+            },
             'testing_done': {
                 'type': str,
                 'description': 'The new testing done text.',
@@ -3751,6 +3760,10 @@ class ReviewRequestDraftResource(WebAPIResource):
                 'type': str,
                 'description': 'A comma-separated list of users that will '
                                'be on a reviewer list.',
+            },
+            'owner': {
+                'type': str,
+                'description': 'The owner of the review request.',
             },
             'testing_done': {
                 'type': str,
@@ -3891,13 +3904,20 @@ class ReviewRequestDraftResource(WebAPIResource):
                         obj = Group.objects.get((Q(name__iexact=value) |
                                                  Q(display_name__iexact=value)) &
                                                 Q(local_site=local_site))
-                    elif field_name == "target_people":
+                    elif field_name in ("target_people", "owner"):
                         obj = self._find_user(username=value,
                                               local_site=local_site)
 
                     target.add(obj)
                 except:
                     invalid_entries.append(value)
+        elif field_name == 'owner':
+            try:
+                local_site = _get_local_site(local_site_name)
+                owner = self._find_user(username=data, local_site=local_site)
+                setattr(draft, field_name, owner)
+            except User.DoesNotExist:
+                invalid_entries.append(data)    
         elif field_name == 'bugs_closed':
             data = list(self._sanitize_bug_ids(data))
             setattr(draft, field_name, ','.join(data))
