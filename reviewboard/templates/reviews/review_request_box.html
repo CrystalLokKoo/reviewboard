@@ -14,20 +14,20 @@
     Review Request <a href="{{review_request_url}}">#{{review_request_id}}</a> -
   {% endblocktrans %}
   {% if review_request.status == 'S' %}
-
+   {% blocktrans %}
    Created {{dateadded}} by <a href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a> and submitted
    <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
-
+   {% endblocktrans %}
   {% elif review_request.status == 'D' %}
-
+   {% blocktrans %}
    Created {{dateadded}} by <a href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a> and discarded
    <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
-
+   {% endblocktrans %}
   {% elif review_request.status == 'P' %}
-
+   {% blocktrans %}
    Created {{dateadded}} by <a href="{% url user review_request.submitter %}">{{review_request.submitter|user_displayname}}</a> and updated
    <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
-
+   {% endblocktrans %}
   {% endif %}
   {% endwith %}
   </p>
@@ -46,7 +46,7 @@
   </tr>
   <tr>
    <td class="label"><label for="owner">{% trans "Owner" %}:</label></td>
-   <td class="value"><span id="owner" class="editable"><a class="user" href="{% url user review_request.owner %}">{{review_request.owner|user_displayname}}</a></span></td>
+   <td class="value"><span id="owner" class="editable"><a class="user" href="{% url user review_request.owner %}">{{review_request.owner}}</a></span></td>
    <td class="caption" colspan="2">
     {% trans "Reviewers" %}
 {% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}

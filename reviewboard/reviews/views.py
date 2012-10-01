@@ -715,6 +715,7 @@ def review_detail(request,
             'file_attachments': file_attachments,
             'screenshots': screenshots,
             'can_edit_review_request': review_request.is_mutable_by(request.user),
+            'submitter_url': review_request.submitter.get_absolute_url(),
         })))
     set_etag(response, etag)
 

@@ -1173,7 +1173,6 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
         def update_field(a, b, name, record_changes=True):
             # Apparently django models don't have __getattr__ or __setattr__,
             # so we have to update __dict__ directly.  Sigh.
-            import pdb; pdb.set_trace()
             value = b.__dict__[name]
             old_value = a.__dict__[name]
 

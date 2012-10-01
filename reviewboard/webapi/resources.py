@@ -3904,7 +3904,7 @@ class ReviewRequestDraftResource(WebAPIResource):
                         obj = Group.objects.get((Q(name__iexact=value) |
                                                  Q(display_name__iexact=value)) &
                                                 Q(local_site=local_site))
-                    elif field_name in ("target_people", "owner"):
+                    elif field_name == "target_people":
                         obj = self._find_user(username=value,
                                               local_site=local_site)
 
@@ -5767,6 +5767,10 @@ class ReviewRequestResource(WebAPIResource):
         'submitter': {
             'type': UserResource,
             'description': 'The user who submitted the review request.',
+        },
+        'owner': {
+            'type': UserResource,
+            'description': 'The user that owns the review request.',
         },
         'time_added': {
             'type': str,

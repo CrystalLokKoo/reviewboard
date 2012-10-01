@@ -43,6 +43,13 @@ var gEditorCompleteHandlers = {
             .addClass("user")
             .user_infobox();
     },
+    'owner': function(data) {
+        return $(urlize(data,
+                            function(item) { return item.url; },
+                            function(item) { return item.username; }))
+            .addClass("user")
+            .user_infobox();
+    },
     'description': linkifyText,
     'testing_done': linkifyText
 };
@@ -384,11 +391,7 @@ function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
 
     for (var i = 0; i < list.length; i++) {
         var item = list[i];
-        str += '<a href="';
-        str += (urlFunc ? urlFunc(item) : item);
-        str += '">';
-        str += (textFunc ? textFunc(item) : item);
-        str += '</a>';
+        str = urlize(item, urlFunc, textFunc, postProcessFunc);
 
         if (i < list.length - 1) {
             str += ", ";
@@ -398,6 +401,32 @@ function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
     return str;
 }
 
+/*
+ * Converts an item to a hyperlink.
+ *
+ * By default, this will use the item as the URL and as the hyperlink text.
+ * By overriding urlFunc and textFunc, the URL and text can be customized.
+ *
+ * @param {object}   item            The item.
+ * @param {function} urlFunc         A function to return the URL for an item
+ *                                   in the list.
+ * @param {function} textFunc        A function to return the text for an item
+ *                                   in the list.
+ * @param {function} postProcessFunc Post-process generated elements in the
+                                     list.
+ *
+ * @return A string containing the HTML markup for the hyperlink.
+ */
+function urlize(item, urlFunc, textFunc, postProcessFunc) {
+    var str = "";
+    str += '<a href="';
+    str += (urlFunc ? urlFunc(item) : item);
+    str += '">';
+    str += (textFunc ? textFunc(item) : item);
+    str += '</a>';
+
+    return str;
+}
 
 /*
  * Linkifies a block of text, turning URLs, /r/#/ paths, nad bug numbers
@@ -571,7 +600,7 @@ $.fn.reviewsAutoComplete = function(options) {
                     return s;
                 },
                 matchCase: false,
-                multiple: true,
+                multiple: options.multiple,
                 parse: function(data) {
                     var items = data[options.fieldName],
                         parsed = [];
@@ -2786,6 +2815,7 @@ $(document).ready(function() {
                         fieldName: "groups",
                         nameKey: "name",
                         descKey: "display_name",
+                        multiple: true,
                         extraParams: {
                             displayname: 1
                         }
@@ -2807,6 +2837,7 @@ $(document).ready(function() {
                         fieldName: "users",
                         nameKey: "username",
                         descKey: "fullname",
+                        multiple: true,
                         extraParams: {
                             fullname: 1
                         }
@@ -2828,6 +2859,7 @@ $(document).ready(function() {
                         fieldName: "users",
                         nameKey: "username",
                         descKey: "fullname",
+                        multiple: false,
                         extraParams: {
                             fullname: 1
                         }
