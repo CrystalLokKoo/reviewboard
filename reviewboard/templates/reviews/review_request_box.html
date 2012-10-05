@@ -9,23 +9,23 @@
   {% star review_request %}
   <div id="summary_wrapper"><label>{% trans "Summary" %}: </label><h1 id="summary" class="editable required">{{review_request_details.summary|escape}}</h1></div>
   <p id="status">
-  {% with review_request_details.time_added|date as dateadded and review_request_details.last_updated as lastupdated and review_request_details.last_updated|date:"c" as lastupdatedraw and review_request.submitter.get_absolute_url as submitter_url %}
+  {% with review_request_details.time_added|date as dateadded and review_request_details.last_updated as lastupdated and review_request_details.last_updated|date:"c" as lastupdatedraw and review_request.submitter.get_absolute_url as submitter_url and review_request.submitter.username as submitter_display_name %}
   {% blocktrans with review_request.display_id as review_request_id and review_request.get_absolute_url as review_request_url %}
     Review Request <a href="{{review_request_url}}">#{{review_request_id}}</a> -
   {% endblocktrans %}
   {% if review_request.status == 'S' %}
    {% blocktrans %}
-   Created {{dateadded}} by <a href="{{submitter_url}}">{{review_request.submitter|user_displayname}}</a> 
+   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a> 
    and submitted <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
   {% elif review_request.status == 'D' %}
    {% blocktrans %}
-   Created {{dateadded}} by <a href="{{submitter_url}}">{{review_request.submitter|user_displayname}}</a> 
+   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a> 
    and discarded <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
   {% elif review_request.status == 'P' %}
    {% blocktrans %}
-   Created {{dateadded}} by <a href="{{submitter_url}}">{{review_request.submitter|user_displayname}}</a> 
+   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a> 
    and updated <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
   {% endif %}
