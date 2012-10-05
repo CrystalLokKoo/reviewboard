@@ -3912,11 +3912,12 @@ class ReviewRequestDraftResource(WebAPIResource):
                 except:
                     invalid_entries.append(value)
         elif field_name == 'owner':
-            try:
-                local_site = _get_local_site(local_site_name)
-                owner = self._find_user(username=data, local_site=local_site)
+            local_site = _get_local_site(local_site_name)
+            owner = self._find_user(username=data, local_site=local_site)
+
+            if owner:
                 setattr(draft, field_name, owner)
-            except User.DoesNotExist:
+            else:
                 invalid_entries.append(data)    
         elif field_name == 'bugs_closed':
             data = list(self._sanitize_bug_ids(data))
@@ -3961,7 +3962,6 @@ class ReviewRequestDraftResource(WebAPIResource):
         User object if the authentication backend knows that the user exists.
         """
         username = username.strip()
-
         if local_site:
             return local_site.users.get(username=username)
 
@@ -3970,12 +3970,9 @@ class ReviewRequestDraftResource(WebAPIResource):
         except User.DoesNotExist:
             for backend in auth.get_backends():
                 try:
-                    user = backend.get_or_create_user(username)
+                    return backend.get_or_create_user(username)
                 except:
                     pass
-
-                if user:
-                    return user
 
         return None
 

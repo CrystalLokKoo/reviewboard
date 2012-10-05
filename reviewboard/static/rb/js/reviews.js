@@ -419,11 +419,15 @@ function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
  */
 function urlize(item, urlFunc, textFunc, postProcessFunc) {
     var str = "";
-    str += '<a href="';
-    str += (urlFunc ? urlFunc(item) : item);
-    str += '">';
-    str += (textFunc ? textFunc(item) : item);
-    str += '</a>';
+
+    if (item != null) {
+        str += '<a href="';
+        str += (urlFunc ? urlFunc(item) : item);
+        str += '">';
+        str += (textFunc ? textFunc(item) : item);
+        str += '</a>';
+
+    }
 
     return str;
 }
