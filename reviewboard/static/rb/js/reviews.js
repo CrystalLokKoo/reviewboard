@@ -451,14 +451,18 @@ function linkifyText(text) {
              * We might catch an entity at the end of the URL. This is hard
              * to avoid, since we can't rely on advanced RegExp techniques
              * in all browsers. So, we'll now search for it and prevent it
-             * from being part of the URL if it exists.
+             * from being part of the URL if it exists. However, a URL with 
+             * an open bracket will not have its close bracket removed. This
+             * was a modification to the original bug fix.
              *
              * See bug 1069.
              */
-            var extra = "";
-            var parts = url.match(/^(.*)(&[a-z]+;|\))$/);
 
-            if (parts != null) {
+            var extra = '',
+                parts = url.match(/^(.*)(&[a-z]+;|\))/),
+                openParen = url.match(/.*\(.*/);
+
+            if (parts != null && openParen == null ) {
                 /* We caught an entity. Set it free. */
                 url = parts[1];
                 extra = parts[2];
@@ -1710,7 +1714,8 @@ $.reviewForm = function(review) {
         $(".comment-editable", dlg).each(function() {
             var editable = $(this);
             var comment = editable.data('comment');
-            var issueOpened = editable.next()[0].checked;
+            var issue = editable.next()[0];
+            var issueOpened = issue ? issue.checked : false;
 
             if (editable.inlineEditor("dirty") ||
                 issueOpened != comment.issue_opened) {

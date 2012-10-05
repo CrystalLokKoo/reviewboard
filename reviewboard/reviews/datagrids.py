@@ -1,4 +1,5 @@
 import pytz
+import logging
 
 from django.contrib.auth.models import User
 from django.contrib.staticfiles.templatetags.staticfiles import static
@@ -23,7 +24,7 @@ class DateTimeSinceColumn(DateTimeColumn):
     number of minutes, hours, days, etc. ago is correct.
     """
     def render_data(self, obj):
-        return '<time class="timesince" datetime="%s">%s</time>' % (
+        return u'<time class="timesince" datetime="%s">%s</time>' % (
             date(getattr(obj, self.field_name), 'c'),
             super(DateTimeSinceColumn, self).render_data(obj))
 
@@ -120,10 +121,10 @@ class ShipItColumn(Column):
 
     def render_data(self, review_request):
         if review_request.shipit_count > 0:
-            return '<span class="shipit-count">' \
-                    '<img src="%s" width="9" height="8" alt="%s" ' \
-                         'title="%s" /> %s' \
-                   '</span>' % \
+            return u'<span class="shipit-count">' \
+                    u'<img src="%s" width="9" height="8" alt="%s" ' \
+                         u'title="%s" /> %s' \
+                   u'</span>' % \
                 (static("rb/images/shipit_checkmark.png"),
                  self.image_alt, self.image_alt, review_request.shipit_count)
 
@@ -208,8 +209,8 @@ class MyCommentsColumn(Column):
                 image_url = static("rb/images/comment-small.png")
                 image_alt = _("Comments published")
 
-        return '<img src="%s" width="%s" height="%s" alt="%s" ' \
-               'title="%s" />' % \
+        return u'<img src="%s" width="%s" height="%s" alt="%s" ' \
+               u'title="%s" />' % \
                 (image_url, self.image_width, self.image_height,
                  image_alt, image_alt)
 
@@ -229,8 +230,8 @@ class ToMeColumn(Column):
         user = self.datagrid.request.user
         if (user.is_authenticated() and
             review_request.target_people.filter(pk=user.pk).exists()):
-            return '<div title="%s"><b>&raquo;</b></div>' % \
-                    (self.detailed_label)
+            return u'<div title="%s"><b>&raquo;</b></div>' % \
+                     (self.detailed_label)
 
         return ""
 
@@ -251,8 +252,8 @@ class NewUpdatesColumn(Column):
 
     def render_data(self, review_request):
         if review_request.new_review_count > 0:
-            return '<img src="%s" width="%s" height="%s" alt="%s" ' \
-                   'title="%s" />' % \
+            return u'<img src="%s" width="%s" height="%s" alt="%s" ' \
+                    u'title="%s" />' % \
                 (self.image_url, self.image_width, self.image_height,
                  self.image_alt, self.image_alt)
 
@@ -479,6 +480,31 @@ class LastUpdatedByColumn(Column):
         return obj.last_updated_by or ""
 
 
+class BugsColumn(Column):
+    def __init__(self, *args, **kwargs):
+        super(BugsColumn, self).__init__(_("Bugs"), link=False, shrink=True,
+                                         sortable=False, css_class="bugs",
+                                         *args, **kwargs)
+
+    def augment_queryset(self, queryset):
+        return queryset.select_related('repository')
+
+    def render_data(self, review_request):
+        bugs = review_request.get_bug_list()
+        repository = review_request.repository
+
+        if repository and repository.bug_tracker:
+            try:
+                return (", ").join(['<a href="%s">%s</a>' %
+                                    (repository.bug_tracker % bug, bug)
+                                    for bug in bugs])
+            except TypeError:
+                logging.warning('Invalid bug tracker format when rendering '
+                                'bugs column: %s' % repository.bug_tracker)
+
+        return (", ").join(bugs)
+
+
 class ReviewRequestDataGrid(DataGrid):
     """
     A datagrid that displays a list of review requests.
@@ -494,8 +520,7 @@ class ReviewRequestDataGrid(DataGrid):
 
     branch       = Column(_("Branch"), db_field="branch",
                           shrink=True, sortable=True, link=False)
-    bugs_closed  = Column(_("Bugs"), db_field="bugs_closed",
-                          shrink=True, sortable=False, link=False)
+    bugs_closed  = BugsColumn()
     repository   = RepositoryColumn()
     time_added   = DateTimeColumn(_("Posted"),
         detailed_label=_("Posted Time"),
