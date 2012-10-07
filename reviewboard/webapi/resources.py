@@ -3919,7 +3919,7 @@ class ReviewRequestDraftResource(WebAPIResource):
             if owner:
                 setattr(draft, field_name, owner)
             else:
-                invalid_entries.append(data)    
+                invalid_entries.append(data)
         elif field_name == 'bugs_closed':
             data = list(self._sanitize_bug_ids(data))
             setattr(draft, field_name, ','.join(data))
@@ -3963,6 +3963,7 @@ class ReviewRequestDraftResource(WebAPIResource):
         User object if the authentication backend knows that the user exists.
         """
         username = username.strip()
+
         if local_site:
             return local_site.users.get(username=username)
 

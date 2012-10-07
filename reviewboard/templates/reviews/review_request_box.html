@@ -15,17 +15,17 @@
   {% endblocktrans %}
   {% if review_request.status == 'S' %}
    {% blocktrans %}
-   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a> 
+   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a>
    and submitted <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
   {% elif review_request.status == 'D' %}
    {% blocktrans %}
-   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a> 
+   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a>
    and discarded <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
   {% elif review_request.status == 'P' %}
    {% blocktrans %}
-   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a> 
+   Created {{dateadded}} by <a href="{{submitter_url}}">{{submitter_display_name}}</a>
    and updated <time class="timesince" datetime="{{lastupdatedraw}}">{{lastupdated}}</time>
    {% endblocktrans %}
   {% endif %}

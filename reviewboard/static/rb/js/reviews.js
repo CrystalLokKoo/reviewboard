@@ -408,12 +408,9 @@ function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
  * By overriding urlFunc and textFunc, the URL and text can be customized.
  *
  * @param {object}   item            The item.
- * @param {function} urlFunc         A function to return the URL for an item
- *                                   in the list.
- * @param {function} textFunc        A function to return the text for an item
- *                                   in the list.
- * @param {function} postProcessFunc Post-process generated elements in the
-                                     list.
+ * @param {function} urlFunc         A function to return the URL for an item.
+ * @param {function} textFunc        A function to return the text for an item.
+ * @param {function} postProcessFunc Post-process generated elements.
  *
  * @return A string containing the HTML markup for the hyperlink.
  */
