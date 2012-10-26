@@ -576,7 +576,7 @@ function setDraftField(field, value) {
 
 /*
  * An autocomplete() wrapper that converts our autocomplete data into the
- * format expected by jQuery.ui.autocomplete. It also adds some additional
+ * format expected by jQuery.ui.rbautocomplete. It also adds some additional
  * explanatory text to the bottom of the autocomplete list.
  *
  * options has the following fields:
@@ -594,7 +594,7 @@ function setDraftField(field, value) {
 $.fn.reviewsAutoComplete = function(options) {
     return this.each(function() {
         $(this)
-            .autocomplete({
+            .rbautocomplete({
                 formatItem: function(data) {
                     var s = data[options.nameKey];
 
@@ -815,6 +815,7 @@ $.fn.commentSection = function(review_id, context_id, context_type) {
                     },
                     "cancel": function(e) {
                         gEditCount--;
+                        addCommentLink.fadeIn();
                         removeCommentFormIfEmpty(self);
                     }
                 })

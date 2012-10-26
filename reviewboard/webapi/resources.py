@@ -57,20 +57,21 @@ from reviewboard.reviews.models import BaseComment, Comment, DiffSet, \
                                        ReviewRequest, ReviewRequestDraft, \
                                        Review, ScreenshotComment, Screenshot, \
                                        FileAttachmentComment
-from reviewboard.scmtools import sshutils
 from reviewboard.scmtools.errors import AuthenticationError, \
-                                        BadHostKeyError, \
                                         ChangeNumberInUseError, \
                                         EmptyChangeSetError, \
                                         FileNotFoundError, \
                                         InvalidChangeNumberError, \
                                         SCMError, \
                                         RepositoryNotFoundError, \
-                                        UnknownHostKeyError, \
                                         UnverifiedCertificateError
 from reviewboard.scmtools.models import Tool
 from reviewboard.site.models import LocalSite
 from reviewboard.site.urlresolvers import local_site_reverse
+from reviewboard.ssh.client import SSHClient
+from reviewboard.ssh.errors import SSHError, \
+                                   BadHostKeyError, \
+                                   UnknownHostKeyError
 from reviewboard.webapi.decorators import webapi_check_login_required, \
                                           webapi_check_local_site
 from reviewboard.webapi.encoder import status_to_string, string_to_status
@@ -2654,9 +2655,10 @@ class RepositoryResource(WebAPIResource):
                 }
             }
 
+        cert = {}
         error_result = self._check_repository(scmtool.get_scmtool_class(),
                                               path, username, password,
-                                              local_site, trust_host)
+                                              local_site, trust_host, cert)
 
         if error_result is not None:
             return error_result
@@ -2664,7 +2666,7 @@ class RepositoryResource(WebAPIResource):
         if public is None:
             public = True
 
-        repository = Repository.objects.create(
+        repository = Repository(
             name=name,
             path=path,
             mirror_path=mirror_path or '',
@@ -2676,6 +2678,11 @@ class RepositoryResource(WebAPIResource):
             encoding=encoding or '',
             public=public,
             local_site=local_site)
+
+        if cert:
+            repository.extra_data['cert'] = cert
+
+        repository.save()
 
         return 201, {
             self.item_result_key: repository,
@@ -2785,16 +2792,22 @@ class RepositoryResource(WebAPIResource):
 
         # Only check the repository if the access information has changed.
         if 'path' in kwargs or 'username' in kwargs or 'password' in kwargs:
+            cert = {}
+
             error_result = self._check_repository(
                 repository.tool.get_scmtool_class(),
                 repository.path,
                 repository.username,
                 repository.password,
                 repository.local_site,
-                trust_host)
+                trust_host,
+                cert)
 
             if error_result is not None:
                 return error_result
+
+            if cert:
+                repository.extra_data['cert'] = cert
 
         # If the API call is requesting that we archive the name, we'll give it
         # a name which won't overlap with future user-named repositories. This
@@ -2840,7 +2853,7 @@ class RepositoryResource(WebAPIResource):
         return 204, {}
 
     def _check_repository(self, scmtool_class, path, username, password,
-                          local_site, trust_host):
+                          local_site, trust_host, ret_cert):
         if local_site:
             local_site_name = local_site.name
         else:
@@ -2858,10 +2871,10 @@ class RepositoryResource(WebAPIResource):
             except BadHostKeyError, e:
                 if trust_host:
                     try:
-                        sshutils.replace_host_key(e.hostname,
-                                                  e.raw_expected_key,
-                                                  e.raw_key,
-                                                  local_site_name)
+                        client = SSHClient(namespace=local_site_name)
+                        client.replace_host_key(e.hostname,
+                                                e.raw_expected_key,
+                                                e.raw_key)
                     except IOError, e:
                         return SERVER_CONFIG_ERROR, {
                             'reason': str(e),
@@ -2875,8 +2888,8 @@ class RepositoryResource(WebAPIResource):
             except UnknownHostKeyError, e:
                 if trust_host:
                     try:
-                        sshutils.add_host_key(e.hostname, e.raw_key,
-                                              local_site_name)
+                        client = SSHClient(namespace=local_site_name)
+                        client.add_host_key(e.hostname, e.raw_key)
                     except IOError, e:
                         return SERVER_CONFIG_ERROR, {
                             'reason': str(e),
@@ -2889,7 +2902,11 @@ class RepositoryResource(WebAPIResource):
             except UnverifiedCertificateError, e:
                 if trust_host:
                     try:
-                        scmtool_class.accept_certificate(path, local_site_name)
+                        cert = scmtool_class.accept_certificate(
+                            path, local_site_name)
+
+                        if cert:
+                            ret_cert.update(cert)
                     except IOError, e:
                         return SERVER_CONFIG_ERROR, {
                             'reason': str(e),
@@ -2914,8 +2931,16 @@ class RepositoryResource(WebAPIResource):
                     return REPO_AUTHENTICATION_ERROR, {
                         'reason': str(e),
                     }
+            except SSHError, e:
+                logging.error('Got unexpected SSHError when checking '
+                              'repository: %s'
+                              % e, exc_info=1)
+                return REPO_INFO_ERROR, {
+                    'error': str(e),
+                }
             except SCMError, e:
-                logging.error('Got unexpected SCMError when checking repository: %s'
+                logging.error('Got unexpected SCMError when checking '
+                              'repository: %s'
                               % e, exc_info=1)
                 return REPO_INFO_ERROR, {
                     'error': str(e),
@@ -4511,6 +4536,11 @@ class BaseFileAttachmentCommentResource(BaseCommentResource):
             'type': 'reviewboard.webapi.resources.UserResource',
             'description': 'The user who made the comment.',
         },
+        'extra_data': {
+            'type': dict,
+            'description': 'Extra data as part of the comment. This depends '
+                           'on the type of file being commented on.',
+        },
     }, **BaseCommentResource.fields)
 
     uri_object_key = 'comment_id'
@@ -4615,9 +4645,10 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
                 'description': 'Whether the comment opens an issue.',
             },
         },
+        allow_unknown=True
     )
     def create(self, request, file_attachment_id=None, text=None,
-               issue_opened=False, *args, **kwargs):
+               issue_opened=False, extra_fields={}, *args, **kwargs):
         """Creates a file comment on a review.
 
         This will create a new comment on a file as part of a review.
@@ -4649,6 +4680,10 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
         new_comment = self.model(file_attachment=file_attachment,
                                  text=text,
                                  issue_opened=bool(issue_opened))
+
+        for key, value in extra_fields.iteritems():
+            if value != '':
+                new_comment.extra_data[key] = value
 
         if issue_opened:
             new_comment.issue_status = BaseComment.OPEN
@@ -4682,8 +4717,9 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
                 'description': 'The status of an open issue.',
             }
         },
+        allow_unknown=True
     )
-    def update(self, request, *args, **kwargs):
+    def update(self, request, extra_fields={}, *args, **kwargs):
         """Updates a file comment.
 
         This can update the text or region of an existing comment. It
@@ -4717,6 +4753,12 @@ class ReviewFileAttachmentCommentResource(BaseFileAttachmentCommentResource):
 
             if value is not None:
                 setattr(file_comment, field, value)
+
+        for key, value in extra_fields.iteritems():
+            if value != '':
+                file_comment.extra_data[key] = value
+            elif key in file_comment.extra_data:
+                del file_comment.extra_data[key]
 
         file_comment.save()
 
@@ -6150,6 +6192,10 @@ class ReviewRequestResource(WebAPIResource):
             return INVALID_CHANGE_NUMBER
         except EmptyChangeSetError:
             return EMPTY_CHANGESET
+        except SSHError, e:
+            logging.error("Got unexpected SSHError when creating repository: %s"
+                          % e, exc_info=1)
+            return REPO_INFO_ERROR
         except SCMError, e:
             logging.error("Got unexpected SCMError when creating repository: %s"
                           % e, exc_info=1)

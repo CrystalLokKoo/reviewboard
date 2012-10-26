@@ -13,4 +13,5 @@ SEQUENCE = [
     'file_attachments',
     'track_user_changes',
     'add_reviewrequest_owner'
+    'file_attachment_comment_extra_data',
 ]
