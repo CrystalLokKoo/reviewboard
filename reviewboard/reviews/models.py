@@ -619,9 +619,9 @@ class ReviewRequest(BaseReviewRequestDetails):
 
     def is_mutable_by(self, user):
         "Returns true if the user can modify this review request"
-        return self.submitter == user or \
-               self.owner == user or \
-               user.has_perm('reviews.can_edit_reviewrequest')
+        return (self.submitter == user or
+                self.owner == user or
+                user.has_perm('reviews.can_edit_reviewrequest'))
 
     def get_draft(self, user=None):
         """
@@ -632,9 +632,7 @@ class ReviewRequest(BaseReviewRequestDetails):
         if not user:
             return get_object_or_none(self.draft)
         elif user.is_authenticated():
-            return get_object_or_none(self.draft,
-                                      Q(draft_creator=user) | \
-                                      Q(review_request__submitter=user))
+            return ReviewRequest.objects.get_user_draft(self.draft, user)
 
         return None
 
@@ -892,7 +890,7 @@ class ReviewRequest(BaseReviewRequestDetails):
                         local_site=self.local_site))
 
         draft = get_object_or_none(self.draft,
-                                   Q(draft_creator=user) | \
+                                   Q(draft_creator=user) |
                                    Q(review_request__submitter=user))
         if draft is not None:
             # This will in turn save the review request, so we'll be done.

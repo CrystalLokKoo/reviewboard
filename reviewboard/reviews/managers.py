@@ -277,6 +277,12 @@ class ReviewRequestManager(ConcurrencyManager):
         else:
             return User.objects.get(username=user_or_username)
 
+    def get_user_draft(self, draft, user):
+        """Returns the ReviewRequestDraft object if it is owned by the user"""
+        return get_object_or_none(draft,
+                                  Q(draft_creator=user) |
+                                  Q(review_request__submitter=user))
+
 
 class ReviewManager(ConcurrencyManager):
     """A manager for Review models.

@@ -401,6 +401,7 @@ function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
     return str;
 }
 
+
 /*
  * Converts an item to a hyperlink.
  *
@@ -415,9 +416,10 @@ function urlizeList(list, urlFunc, textFunc, postProcessFunc) {
  * @return A string containing the HTML markup for the hyperlink.
  */
 function urlize(item, urlFunc, textFunc, postProcessFunc) {
+
     var str = "";
 
-    if (item != null) {
+    if (item !== null) {
         str += '<a href="';
         str += (urlFunc ? urlFunc(item) : item);
         str += '">';

@@ -28,7 +28,7 @@
 {% endif %}
 </div>
 {% else %}{# pending review #}
-{%  if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
+{%  if can_edit_review_request %}
 <div class="banner" id="draft-banner" style="display:none;">
 {%   if review_request.public %}
  <h1>{% trans "This review request is a draft." %}</h1>
@@ -51,7 +51,7 @@
 </div>
 {% endif %}
 
-{% if can_edit_review_request or perms.reviews.can_edit_reviewrequest and review_request.status == 'P'%}
+{% if can_edit_review_request and review_request.status == 'P'%}
 {%  if draft or not review_request.public %}
 <script type="text/javascript">
   $("#draft-banner").show();

@@ -53,7 +53,7 @@
    </td>
    <td class="caption" colspan="2">
     {% trans "Reviewers" %}
-{% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
+{% if can_edit_review_request %}
     <span class="required-flag">*</span>
 {% endif %}
    </td>
@@ -109,7 +109,7 @@
   <label for="testing_done">{% trans "Testing Done" %}:</label>
   <pre id="testing_done" class="editable">{{review_request_details.testing_done|escape}}</pre>
  </div>
-{% if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
+{% if can_edit_review_request %}
  <div class="content" id="required-field-legend"><span class="required-flag">*</span> {% trans "Required Field" %}</div>
 {% endif %}
  <div class="content clearfix"{% if not screenshots %} style="display: none;"{% endif %}>
