@@ -7,6 +7,7 @@ from django.db.models import Manager, Q
 from django.db.models.query import QuerySet
 
 from djblets.util.db import ConcurrencyManager
+from djblets.util.misc import get_object_or_none
 
 from reviewboard.diffviewer.models import DiffSetHistory
 from reviewboard.scmtools.errors import ChangeNumberInUseError
