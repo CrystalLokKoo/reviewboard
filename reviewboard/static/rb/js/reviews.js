@@ -45,8 +45,8 @@ var gEditorCompleteHandlers = {
     },
     'owner': function(data) {
         return $(urlize(data,
-                            function(item) { return item.url; },
-                            function(item) { return item.username; }))
+                        function(item) { return item.url; },
+                        function(item) { return item.username; }))
             .addClass("user")
             .user_infobox();
     },
