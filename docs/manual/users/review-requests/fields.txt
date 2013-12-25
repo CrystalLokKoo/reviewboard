@@ -2,11 +2,11 @@
 Editing Fields
 ==============
 
-Updating review requests is very much like
-:ref:`creating review requests <creating-review-requests>`. Once you have
-a review request out there, you can upload a new diff, add new screenshots,
-or modify the fields. Any changes you make will be seen by you only until you
-:ref:`publish the changes <publishing-review-requests>`.
+Updating review requests is very much like :ref:`creating review requests
+<creating-review-requests>`. Once you have a review request out there, you can
+upload a new diff, add new file attachments, or modify the fields. Any changes
+you make will be seen by you only until you :ref:`publish the changes
+<publishing-review-requests>`.
 
 
 Changing Fields
@@ -52,9 +52,18 @@ originated.
 Bugs
 ----
 
-This :guilabel:`Bugs` field is a comma-separated list of bug IDs that
+The :guilabel:`Bugs` field is a comma-separated list of bug IDs that
 the change addresses. If the repository is configured with a bug tracker,
 the bug IDs will link to the reports on the bug tracker.
+
+
+Depends On
+----------
+
+The :guilabel:`Depends On` field is a comma-separated list of review request
+IDs which are used to indicate dependencies between changes. The IDs will link
+to the other review requests, allowing reviewers to take that information into
+account when reading the changes.
 
 
 Groups
@@ -97,6 +106,9 @@ It can support paragraphs of text with word-wrapping.
 This is intended to provide enough information for reviewers to know what the
 change is about before they go to review it.
 
+This field supports rich text using the :term:`Markdown` language. See
+:ref:`using-markdown` for more information.
+
 
 Testing Done
 ------------
@@ -107,6 +119,9 @@ It can support paragraphs of text with word-wrapping.
 This should cover any and all testing scenarios that have been done, in order
 to help reviewers feel more confident about the stability and design of the
 change.
+
+This field supports rich text using the :term:`Markdown` language. See
+:ref:`using-markdown` for more information.
 
 
 .. comment: vim: ft=rst et ts=3

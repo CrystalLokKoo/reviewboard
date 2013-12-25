@@ -1,12 +1,15 @@
+from __future__ import unicode_literals
+
 from datetime import datetime
 import os
 import optparse
-import sys
 import time
 
-from django.core.management.base import NoArgsCommand
+from django.conf import settings
+from django.core.management.base import CommandError, NoArgsCommand
 from django.db.models import Q
-
+from django.utils import timezone
+from djblets.util.compat import six
 from djblets.siteconfig.models import SiteConfiguration
 
 from reviewboard.reviews.models import ReviewRequest
@@ -31,7 +34,7 @@ class Command(NoArgsCommand):
         optparse.make_option('--full', action='store_false',
                              dest='incremental', default=True,
                              help='Do a full (level-0) index of the database'),
-        )
+    )
     help = "Creates a search index of review requests"
     requires_model_validation = True
 
@@ -40,14 +43,13 @@ class Command(NoArgsCommand):
 
         # Refuse to do anything if they haven't turned on search.
         if not siteconfig.get("search_enable"):
-            sys.stderr.write('Search is currently disabled. It must be '
-                             'enabled in the Review Board administration '
-                             'settings to run this command.\n')
-            sys.exit(1)
+            raise CommandError('Search is currently disabled. It must be '
+                               'enabled in the Review Board administration '
+                               'settings to run this command.\n')
 
         if not have_lucene:
-            sys.stderr.write('PyLucene is required to build the search index.\n')
-            sys.exit(1)
+            raise CommandError('PyLucene is required to build the search '
+                               'index.\n')
 
         incremental = options.get('incremental', True)
 
@@ -59,15 +61,18 @@ class Command(NoArgsCommand):
         timestamp = 0
         if incremental:
             try:
-                f = open(timestamp_file, 'r')
-                timestamp = datetime.utcfromtimestamp(int(f.read()))
-                f.close()
+                with open(timestamp_file, 'r') as f:
+                    if timezone and settings.USE_TZ:
+                        timestamp = timezone.make_aware(
+                            datetime.utcfromtimestamp(int(f.read())),
+                            timezone.get_default_timezone())
+                    else:
+                        timestamp = datetime.utcfromtimestamp(int(f.read()))
             except IOError:
                 incremental = False
 
-        f = open(timestamp_file, 'w')
-        f.write('%d' % time.time())
-        f.close()
+        with open(timestamp_file, 'w') as f:
+            f.write('%d' % time.time())
 
         if lucene_is_2x:
             store = lucene.FSDirectory.getDirectory(store_dir, False)
@@ -76,7 +81,8 @@ class Command(NoArgsCommand):
                                         not incremental)
         elif lucene_is_3x:
             store = lucene.FSDirectory.open(lucene.File(store_dir))
-            writer = lucene.IndexWriter(store,
+            writer = lucene.IndexWriter(
+                store,
                 lucene.StandardAnalyzer(lucene.Version.LUCENE_CURRENT),
                 not incremental,
                 lucene.IndexWriter.MaxFieldLength.LIMITED)
@@ -92,8 +98,8 @@ class Command(NoArgsCommand):
             #        Q(review__timestamp__gt=timestamp)
             objects = objects.filter(query)
 
-        if sys.stdout.isatty():
-            print 'Creating Review Request Index'
+        if self.stdout.isatty():
+            self.stdout.write('Creating Review Request Index')
         totalobjs = objects.count()
         i = 0
         prev_pct = -1
@@ -102,29 +108,30 @@ class Command(NoArgsCommand):
             try:
                 # Remove the old documents from the index
                 if incremental:
-                    writer.deleteDocuments(lucene.Term('id', str(request.id)))
+                    writer.deleteDocuments(
+                        lucene.Term('id', six.text_type(request.id)))
 
                 self.index_review_request(writer, request)
 
-                if sys.stdout.isatty():
+                if self.stdout.isatty():
                     i += 1
                     pct = (i * 100 / totalobjs)
                     if pct != prev_pct:
-                        sys.stdout.write("  [%s%%]\r" % pct)
-                        sys.stdout.flush()
+                        self.stdout.write("  [%s%%]\r" % pct)
+                        self.stdout.flush()
                         prev_pct = pct
 
-            except Exception, e:
-                sys.stderr.write('Error indexing ReviewRequest #%d: %s\n' % \
-                                 (request.id, e))
+            except Exception as e:
+                self.stderr.write('Error indexing ReviewRequest #%d: %s\n'
+                                 % (request.id, e))
 
-        if sys.stdout.isatty():
-            print 'Optimizing Index'
+        if self.stdout.isatty():
+            self.stdout.write('Optimizing Index')
         writer.optimize()
 
-        if sys.stdout.isatty():
-            print 'Indexed %d documents' % totalobjs
-            print 'Done'
+        if self.stdout.isatty():
+            self.stdout.write('Indexed %d documents' % totalobjs)
+            self.stdout.write('Done')
 
         writer.close()
 
@@ -143,7 +150,7 @@ class Command(NoArgsCommand):
         # to use for the default field, so people can just type in a
         # string and get results.
         doc = lucene.Document()
-        doc.add(lucene.Field('id', str(request.id),
+        doc.add(lucene.Field('id', six.text_type(request.id),
                              lucene.Field.Store.YES,
                              lucene.Field.Index.NO))
         doc.add(lucene.Field('summary', request.summary,
@@ -151,7 +158,7 @@ class Command(NoArgsCommand):
                              lucene_tokenized))
         if request.changenum:
             doc.add(lucene.Field('changenum',
-                                 unicode(request.changenum),
+                                 six.text_type(request.changenum),
                                  lucene.Field.Store.NO,
                                  lucene_tokenized))
         # Remove commas, since lucene won't tokenize it right with them
@@ -191,7 +198,7 @@ class Command(NoArgsCommand):
 
         text = '\n'.join([request.summary,
                           request.description,
-                          unicode(request.changenum),
+                          six.text_type(request.changenum),
                           request.testing_done,
                           bugs,
                           name,

@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import logging
 
 from django.conf import settings
@@ -10,9 +12,22 @@ from djblets.siteconfig.models import SiteConfiguration
 
 from reviewboard.accounts.signals import user_registered
 from reviewboard.reviews.models import ReviewRequest, Review
-from reviewboard.reviews.signals import review_request_published, \
-                                        review_published, reply_published
+from reviewboard.reviews.signals import (review_request_published,
+                                         review_published, reply_published,
+                                         review_request_closed)
 from reviewboard.reviews.views import build_diff_comment_fragments
+
+
+def review_request_closed_cb(sender, user, review_request, **kwargs):
+    """Sends e-mail when a review request is closed.
+
+    Listens to the ``review_request_closed`` signal and sends an
+    email if this type of notification is enabled (through
+    ``mail_send_review_close_mail`` site configuration).
+    """
+    siteconfig = SiteConfiguration.objects.get_current()
+    if siteconfig.get("mail_send_review_close_mail"):
+        mail_review_request(review_request, on_close=True)
 
 
 def review_request_published_cb(sender, user, review_request, changedesc,
@@ -24,7 +39,7 @@ def review_request_published_cb(sender, user, review_request, changedesc,
     """
     siteconfig = SiteConfiguration.objects.get_current()
     if siteconfig.get("mail_send_review_mail"):
-        mail_review_request(user, review_request, changedesc)
+        mail_review_request(review_request, changedesc)
 
 
 def review_published_cb(sender, user, review, **kwargs):
@@ -35,7 +50,7 @@ def review_published_cb(sender, user, review, **kwargs):
     """
     siteconfig = SiteConfiguration.objects.get_current()
     if siteconfig.get("mail_send_review_mail"):
-        mail_review(user, review)
+        mail_review(review)
 
 
 def reply_published_cb(sender, user, reply, **kwargs):
@@ -46,7 +61,7 @@ def reply_published_cb(sender, user, reply, **kwargs):
     """
     siteconfig = SiteConfiguration.objects.get_current()
     if siteconfig.get("mail_send_review_mail"):
-        mail_reply(user, reply)
+        mail_reply(reply)
 
 
 def user_registered_cb(user, **kwargs):
@@ -65,6 +80,8 @@ def connect_signals():
                                      sender=ReviewRequest)
     review_published.connect(review_published_cb, sender=Review)
     reply_published.connect(reply_published_cb, sender=Review)
+    review_request_closed.connect(review_request_closed_cb,
+                                  sender=ReviewRequest)
     user_registered.connect(user_registered_cb)
 
 
@@ -72,7 +89,7 @@ def build_email_address(fullname, email):
     if not fullname:
         return email
     else:
-        return u'"%s" <%s>' % (fullname, email)
+        return '"%s" <%s>' % (fullname, email)
 
 
 def get_email_address_for_user(u):
@@ -84,7 +101,7 @@ def get_email_addresses_for_group(g):
         if g.mailing_list.find(",") == -1:
             # The mailing list field has only one e-mail address in it,
             # so we can just use that and the group's display name.
-            return [u'"%s" <%s>' % (g.display_name, g.mailing_list)]
+            return ['"%s" <%s>' % (g.display_name, g.mailing_list)]
         else:
             # The mailing list field has multiple e-mail addresses in it.
             # We don't know which one should have the group's display name
@@ -207,9 +224,12 @@ def send_review_mail(user, review_request, subject, in_reply_to,
     headers = {
         'X-ReviewBoard-URL': base_url,
         'X-ReviewRequest-URL': base_url + review_request.get_absolute_url(),
-        'X-ReviewGroup': ', '.join(group.name for group in \
-                                    review_request.target_groups.all())
+        'X-ReviewGroup': ', '.join(group.name for group in
+                                   review_request.target_groups.all()),
     }
+
+    if review_request.repository:
+        headers['X-ReviewRequest-Repository'] = review_request.repository.name
 
     sender = None
 
@@ -227,7 +247,7 @@ def send_review_mail(user, review_request, subject, in_reply_to,
                                  list(cc_field), in_reply_to, headers)
     try:
         message.send()
-    except Exception, e:
+    except Exception as e:
         logging.error("Error sending e-mail notification with subject '%s' on "
                       "behalf of '%s' to '%s': %s",
                       subject.strip(),
@@ -239,7 +259,7 @@ def send_review_mail(user, review_request, subject, in_reply_to,
     return message.message_id
 
 
-def mail_review_request(user, review_request, changedesc=None):
+def mail_review_request(review_request, changedesc=None, on_close=False):
     """
     Send an e-mail representing the supplied review request.
 
@@ -249,13 +269,19 @@ def mail_review_request(user, review_request, changedesc=None):
     request, and will be None when publishing initially.  This is used by
     the template to add contextual (updated) flags to inform people what
     changed.
+
+    The "on_close" argument indicates whether review request emails should
+    be sent on closing (SUBMITTED,DISCARDED) review requests.
     """
     # If the review request is not yet public or has been discarded, don't send
-    # any mail.
-    if not review_request.public or review_request.status == 'D':
+    # any mail. Relax the "discarded" rule when emails are sent on closing
+    # review requests
+    if (   not review_request.public
+        or (not on_close and review_request.status == 'D')):
         return
 
-    subject = u"Review Request %d: %s" % (review_request.id, review_request.summary)
+    subject = "Review Request %d: %s" % (review_request.display_id,
+                                         review_request.summary)
     reply_message_id = None
 
     if review_request.email_message_id:
@@ -268,21 +294,24 @@ def mail_review_request(user, review_request, changedesc=None):
 
     extra_context = {}
 
+    if on_close:
+        changedesc = review_request.changedescs.filter(public=True).latest()
+
     if changedesc:
         extra_context['change_text'] = changedesc.text
         extra_context['changes'] = changedesc.fields_changed
 
     review_request.time_emailed = timezone.now()
     review_request.email_message_id = \
-        send_review_mail(user, review_request, subject, reply_message_id,
-                         extra_recipients,
+        send_review_mail(review_request.submitter, review_request, subject,
+                         reply_message_id, extra_recipients,
                          'notifications/review_request_email.txt',
                          'notifications/review_request_email.html',
                          extra_context)
     review_request.save()
 
 
-def mail_review(user, review):
+def mail_review(review):
     """Sends an e-mail representing the supplied review."""
     review_request = review.review_request
 
@@ -293,7 +322,7 @@ def mail_review(user, review):
         review.comments.order_by('filediff', 'first_line')
 
     extra_context = {
-        'user': user,
+        'user': review.user,
         'review': review,
     }
 
@@ -303,9 +332,11 @@ def mail_review(user, review):
             "notifications/email_diff_comment_fragment.html")
 
     review.email_message_id = \
-        send_review_mail(user,
+        send_review_mail(review.user,
                          review_request,
-                         u"Re: Review Request %d: %s" % (review_request.id, review_request.summary),
+                         "Re: Review Request %d: %s" % (
+                             review_request.display_id,
+                             review_request.summary),
                          review_request.email_message_id,
                          None,
                          'notifications/review_email.txt',
@@ -315,7 +346,7 @@ def mail_review(user, review):
     review.save()
 
 
-def mail_reply(user, reply):
+def mail_reply(reply):
     """
     Sends an e-mail representing the supplied reply to a review.
     """
@@ -326,7 +357,7 @@ def mail_reply(user, reply):
         return
 
     extra_context = {
-        'user': user,
+        'user': reply.user,
         'review': review,
         'reply': reply,
     }
@@ -338,9 +369,11 @@ def mail_reply(user, reply):
             "notifications/email_diff_comment_fragment.html")
 
     reply.email_message_id = \
-        send_review_mail(user,
+        send_review_mail(reply.user,
                          review_request,
-                         u"Re: Review Request %d: %s" % (review_request.id, review_request.summary),
+                         "Re: Review Request %d: %s" % (
+                             review_request.display_id,
+                             review_request.summary),
                          review.email_message_id,
                          review.participants,
                          'notifications/reply_email.txt',
@@ -365,7 +398,8 @@ def mail_new_user(user):
         'user_url': reverse('admin:auth_user_change', args=(user.id,))
     }
 
-    text_message = render_to_string('notifications/new_user_email.txt', context)
+    text_message = render_to_string('notifications/new_user_email.txt',
+                                    context)
     html_message = render_to_string('notifications/new_user_email.html',
                                     context)
 
@@ -376,7 +410,7 @@ def mail_new_user(user):
 
     try:
         message.send()
-    except Exception, e:
+    except Exception as e:
         logging.error("Error sending e-mail notification with subject '%s' on "
                       "behalf of '%s' to admin: %s",
                       subject.strip(), from_email, e, exc_info=1)

@@ -1,10 +1,12 @@
+from __future__ import unicode_literals
+
 from django.template.defaultfilters import timesince
 from djblets.webapi.core import WebAPIEncoder
 
 from reviewboard.diffviewer.models import FileDiff, DiffSet
-from reviewboard.reviews.models import ReviewRequest, Review, Group, Comment, \
-                                       ReviewRequestDraft, Screenshot, \
-                                       ScreenshotComment
+from reviewboard.reviews.models import (ReviewRequest, Review, Group, Comment,
+                                        ReviewRequestDraft, Screenshot,
+                                        ScreenshotComment)
 from reviewboard.scmtools.models import Repository
 
 
@@ -15,7 +17,7 @@ def status_to_string(status):
         return "submitted"
     elif status == "D":
         return "discarded"
-    elif status == None:
+    elif status is None:
         return "all"
     else:
         raise Exception("Invalid status '%s'" % status)
@@ -58,6 +60,7 @@ class DeprecatedReviewBoardAPIEncoder(WebAPIEncoder):
                 'status': status_to_string(o.status),
                 'public': o.public,
                 'changenum': o.changenum,
+                'commit_id': o.commit,
                 'repository': o.repository,
                 'summary': o.summary,
                 'description': o.description,
@@ -129,7 +132,7 @@ class DeprecatedReviewBoardAPIEncoder(WebAPIEncoder):
             return {
                 'id': o.id,
                 'caption': o.caption,
-                'title': u'Screenshot: %s' % (o.caption or o.image.name),
+                'title': 'Screenshot: %s' % (o.caption or o.image.name),
                 'image_url': o.get_absolute_url(),
                 'thumbnail_url': o.get_thumbnail_url(),
             }

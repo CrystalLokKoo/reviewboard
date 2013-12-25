@@ -2,7 +2,6 @@
 
 @img_base: '../../admin/img';
 @sort_icons: url('@{img_base}/sorting-icons.gif');
-@col_left_width: 240px;
 @colMS_margin_right: 25em;
 @colMS_right_width: 24em;
 
@@ -249,7 +248,7 @@ tr.alt {
 }
 
 thead th {
-  background: transparent url("../../djblets/images/datagrid/header_bg.png") repeat-x;
+  background: transparent url("../images/header_bg.png") repeat-x;
   border-bottom: 1px solid #999999;
   border-left: 0 !important;
   border-right: 1px solid #CCCCCC;
@@ -257,7 +256,11 @@ thead th {
   padding: 5px;
 
   &.ascending a {
-    background: transparent url("../../djblets/images/datagrid/sort_asc_primary.png") no-repeat right 0.4em;
+    background: transparent url("../images/sort_asc_primary.png") no-repeat right 0.4em;
+  }
+
+  &.descending a {
+    background: transparent url("../images/sort_desc_primary.png") no-repeat right 0.4em;
   }
 
   &.sortable:hover {
@@ -334,24 +337,6 @@ thead th {
   }
 }
 
-#changelist {
-  table {
-    tbody {
-      td, th {
-        border: 0;
-
-        &:first-child {
-          border: 0;
-        }
-      }
-    }
-
-    thead th {
-      padding: 4px;
-    }
-  }
-}
-
 
 /****************************************************************************
  * Orderable tables
@@ -395,12 +380,12 @@ textarea {
  ****************************************************************************/
 
 ul.messagelist {
-  margin: 12px;
-  padding: 5px 0;
+  margin: 0 0 1em 0;
+  padding: 0;
 
   li {
-    background: #ffc url('@{img_base}/icon_success.gif') 5px .3em no-repeat;
-    border-bottom: 1px solid #ddd;
+    background: @admin-msg-banner-bg url('@{img_base}/icon_success.gif') 5px .3em no-repeat;
+    border: 1px solid @admin-msg-banner-border-color;
     color: #666;
     display: block;
     font-size: 12px;
@@ -503,21 +488,20 @@ div.breadcrumbs {
  * Page Structure
  ****************************************************************************/
 
-#container {
-  min-width: 760px;
-  padding: 0;
+#page-container #container {
+  margin-left: @admin-sidebar-width !important;
   position: relative;
-  width: 100%;
 }
 
 #content {
   margin: 0;
+  padding: @page-container-padding;
+  padding-right: 0;
 }
 
 h1.title {
   border: 1px @box-border-color solid;
   text-transform: uppercase;
-  .border-radius(0);
   .box-shadow(@box-shadow);
 }
 
@@ -525,19 +509,10 @@ h1.title {
   width: 100%;
 }
 
-#content-main {
-  float: left;
-  width: 100%;
-
-  form {
-    clear: both;
-  }
-}
-
 #content-related {
-  float: right;
-  margin-right: -19em;
-  position: relative;
+  position: absolute;
+  top: @page-container-padding;
+  right: 0;
   width: 18em;
 
   h3 {
@@ -550,9 +525,13 @@ h1.title {
     font-size: 11px;
   }
 
-  .module h2 {
-    background: #EEE url('@{img_base}/nav-bg.gif') bottom left repeat-x;
-    color: #666;
+  .module {
+    margin-top: 0;
+
+    h2 {
+      background: #EEE url('@{img_base}/nav-bg.gif') bottom left repeat-x;
+      color: #666;
+    }
   }
 }
 
@@ -568,11 +547,6 @@ h1.title {
 
 .colMS {
   margin-right: 20em !important;
-}
-
-.colM,
-.flex {
-  margin-left: @col_left_width !important;
 }
 
 .flex {
@@ -629,33 +603,43 @@ td, th {
 .dashboard {
   #content {
     width: auto;
-    margin: 10px;
-
   }
 
   #content-related {
-    margin-right: -@colMS_margin_right;
     width: @colMS_right_width;
   }
 
   .colMS {
     margin-right: @colMS_margin_right !important;
-    margin-left: @col_left_width !important;
   }
 
   .module {
     table {
+      margin-top: 1em;
+
+      td {
+        white-space: nowrap;
+
+        a {
+          display: block;
+          padding-right: 0.6em;
+        }
+      }
+
       th {
         width: 100%;
       }
-    }
 
-    td {
-      white-space: nowrap;
+      td, th {
+        padding: 0.8em 1em;
+      }
 
-      a {
-        display: block;
-        padding-right: 0.6em;
+      tr {
+        border: 0;
+      }
+
+      tr:last-child {
+        border-bottom: 0;
       }
     }
   }
@@ -793,13 +777,12 @@ td, th {
 .inline-group h2,
 #content-related .module h2 {
   background: url("../images/title_box_top_bg.png") repeat-x scroll left top #A2BEDC;
-  border-top: 0;
   border-bottom: 1px solid @box-border-color;
   color: black;
   font-size: 11px;
   font-weight: normal;
   margin: 0;
-  padding: 5px 10px 5px 5px;
+  padding: 0.5em 1em;
   text-align: left;
   text-transform: uppercase;
 }
@@ -816,24 +799,131 @@ td, th {
     background: #FFFDC9;
     border: 0;
     margin: 0;
-    padding: 0;
+    padding: 1em;
+    width: 100%;
+    .box-sizing(border-box);
+    resize: none;
   }
 }
 
-.change-form {
+.change-form, .dashboard {
+  #content-main {
+    border: 1px @box-border-color solid;
+    .border-radius(0 0 @box-border-radius @box-border-radius);
+    .box-shadow(@box-shadow);
+    .box-sizing(border-box);
+    float: left;
+    width: 100%;
+  }
+
   fieldset {
-    margin: 1em 0;
+    background: transparent;
+    border: 0;
+    .border-radius(0);
+    .box-shadow(none);
+    margin: 0 0 1em 0;
+
+    &:first-child>h2 {
+      border-top: 0;
+    }
+
+    &.collapsed {
+      margin: 0;
+    }
+
+    .description {
+      p {
+        margin-bottom: 1em;
+
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+    }
+
+    .form-row:last-child {
+      border-bottom: 0;
+    }
+  }
+
+  fieldset>h2 {
+    border-top: 1px @box-border-color solid;
+    border-bottom: 1px @box-border-color solid;
+  }
+
+  form {
+    clear: both;
+  }
+
+  form>p {
+    font-size: 12px;
+    margin: 2em 12px; // Align with form fields.
+  }
+
+  h1.title {
+    margin-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .submit-row {
+    border: 0;
+    border-top: 1px lighten(@box-border-color, 15%) solid;
+    .border-radius(0 0 @box-border-radius @box-border-radius);
+    margin: 0;
+
+    input, .deletelink-box {
+      padding: 0.3em 0.6em;
+
+      &.default {
+        // TODO: Color
+        font-weight: bold;
+      }
+    }
   }
 }
 
-.confirmation {
-  border: 1px solid #FFBD09;
+.change-list {
+  h1.title {
+    margin-bottom: 0;
+    border-bottom: 0;
+  }
+
+  #changelist {
+    .border-radius(0 0 @box-border-radius @box-border-radius);
+    .box-sizing(border-box);
+    margin-top: 0;
+
+    table {
+      tbody {
+        td, th {
+          border: 0;
+
+          &:first-child {
+            border: 0;
+          }
+        }
+      }
+
+      thead th {
+        padding: 4px;
+
+        &:last-child {
+          border-right: 0;
+        }
+      }
+    }
+
+    .paginator {
+      .border-radius(0 0 @box-border-radius @box-border-radius);
+    }
+  }
+}
+
+.change-form fieldset.confirmation {
+  border-bottom: 1px solid #FFBD09;
   color: black;
   display: block;
-  margin: 1em 0;
-  padding: 0 1em;
   background: #FFFDC9;
-  .border-radius(10px);
 
   a, a:visited {
     color: blue;
@@ -886,38 +976,38 @@ td, th {
 ***************************************************************************/
 
 #log-entries {
+  margin-right: 160px;
+
   pre {
+    color: black;
     margin: 0;
     padding: 0;
-  }
-
-  td {
-   color: black;
+    .pre-wrap;
   }
 
   .level-debug {
-    &.row1 { background-color: #d5d5d5; }
-    &.row2 { background-color: #e5e5e5; }
+    &.row1 th { background-color: #d5d5d5; }
+    &.row2 th { background-color: #e5e5e5; }
   }
 
   .level-info {
-    &.row1 { background-color: #eef4ff; }
-    &.row2 { background-color: #f5f8fc; }
+    &.row1 th { background-color: #eef4ff; }
+    &.row2 th { background-color: #f5f8fc; }
   }
 
   .level-warning {
-    &.row1 { background-color: #fffaa9; }
-    &.row2 { background-color: #fffdbe; }
+    &.row1 th { background-color: #fffaa9; }
+    &.row2 th { background-color: #fffdbe; }
   }
 
   .level-error {
-    &.row1 { background-color: #ffe493; }
-    &.row2 { background-color: #ffeba9; }
+    &.row1 th { background-color: #ffe493; }
+    &.row2 th { background-color: #ffeba9; }
   }
 
   .level-critical {
-    &.row1 { background-color: #f4bcab; }
-    &.row2 { background-color: #f6c8ba; }
+    &.row1 th { background-color: #f4bcab; }
+    &.row2 th { background-color: #f6c8ba; }
   }
 }
 
@@ -926,33 +1016,30 @@ td, th {
  * Extensions
  ****************************************************************************/
 
+.extensions-list-page {
+  #content-main {
+    float: left;
+    width: 100%;
+  }
+}
+
 .extensions {
-  border: 1px #AAAAAA solid;
-  border-top: 0;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  margin-bottom: 20px;
+  .border-radius(0 0 @box-border-radius @box-border-radius);
+  .box-shadow(@box-shadow);
 
   .extension {
-    list-style: none;
-    padding: 1em;
-    position: relative;
+    padding: @box-padding;
 
-    h1 {
-      font-size: 120%;
-      margin-top: 0;
+    &:last-child {
+      .border-radius(0 0 @box-inner-border-radius @box-inner-border-radius);
+    }
 
-      .version {
-        font-weight: normal;
+    .author {
+      a {
+        color: @link-color;
       }
     }
-
-    .description {
-      margin: 0 0 0 1em;
-      padding: 0;
-    }
-  }
+ }
 }
 
 
@@ -972,29 +1059,6 @@ td, th {
   }
 }
 
-.addlink {
-  background: url('@{img_base}/icon_addlink.gif') 0 .2em no-repeat;
-  padding-left: 12px;
-}
-
-.changelink {
-  background: url('@{img_base}/icon_changelink.gif') 0 .2em no-repeat;
-  padding-left: 12px;
-}
-
-.deletelink {
-  background: url('@{img_base}/icon_deletelink.gif') 0 .25em no-repeat;
-  padding-left: 12px;
-}
-
-a.deletelink:link, a.deletelink:visited {
-  color: #CC3434;
-}
-
-a.deletelink:hover {
-  color: #993333;
-}
-
 
 /****************************************************************************
  * Object Tools
@@ -1006,22 +1070,19 @@ a.deletelink:hover {
   margin: -2.2em 0 -2em 0;
   padding: 0;
   position: relative;
-    text-transform: uppercase;
 
   a:link, a:visited {
-    border: 1px black solid;
-    background: @review-request-action-bg;
-    color: black;
+    color: blue;
+    font-weight: bold;
     display: block;
     float: left;
     height: 1.5em;
     line-height: 1.5em;
     margin-right: 0.5em;
-    padding: 0.1em 8px;
-    .border-radius(5px);
+    padding: 0.2em 8px;
 
     &:hover {
-      background: @review-request-action-hover-bg;
+      text-decoration: underline;
     }
   }
 
@@ -1052,6 +1113,47 @@ table#change-history {
 
   tbody th {
     width: 16em;
+  }
+}
+
+
+/****************************************************************************
+ * Login page
+ ****************************************************************************/
+
+.login #page-container {
+  padding-left: 0;
+
+  #container {
+    margin-left: 0 !important;
+
+    h1.title {
+      border-top: 0;
+      border-left: 0;
+      border-right: 0;
+    }
+  }
+}
+
+
+/****************************************************************************
+ * FileDiff page
+ ****************************************************************************/
+.field-diff, .field-parent_diff {
+  p {
+    // Get rid of the extra <p> tags that Django forces on us.
+    display: none;
+  }
+
+  .highlight {
+    // Match the margin/padding of the <p> tag most content goes in.
+    margin-left: 7em;
+    padding-left: 30px;
+
+    pre {
+      margin: 0;
+      padding: 0;
+    }
   }
 }
 

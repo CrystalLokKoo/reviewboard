@@ -1,28 +1,31 @@
+from __future__ import unicode_literals
+
 import datetime
 import re
 import time
 
+from django.core.cache import cache
 from django.contrib.auth.models import User
 from django.db.models.aggregates import Count
 from django.template.context import RequestContext
 from django.template.loader import render_to_string
-from django.utils.translation import ugettext as _
-from djblets.util.misc import cache_memoize
+from django.utils.translation import ugettext_lazy as _
+from djblets.cache.backend import cache_memoize
+from djblets.util.compat import six
 
 from reviewboard.admin.cache_stats import get_cache_stats
 from reviewboard.attachments.models import FileAttachment
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.models import DiffSet
-from reviewboard.reviews.models import ReviewRequest, Group, \
-                                       Comment, Review, Screenshot, \
-                                       ReviewRequestDraft
+from reviewboard.reviews.models import (ReviewRequest, Group,
+                                        Comment, Review, Screenshot,
+                                        ReviewRequestDraft)
 from reviewboard.scmtools.models import Repository
 
 
-DAYS_TOTAL = 30 # Set the number of days to display in date browsing widgets
+DAYS_TOTAL = 30  # Set the number of days to display in date browsing widgets
 
-NAME_TRANSFORM_RE = re.compile('([A-Z])')
-
+NAME_TRANSFORM_RE = re.compile(r'([A-Z])')
 
 primary_widgets = []
 secondary_widgets = []
@@ -44,7 +47,6 @@ class Widget(object):
 
     # Configuration
     title = None
-    icon = None
     size = SMALL
     template = None
     actions = []
@@ -72,8 +74,8 @@ class Widget(object):
 
         return render_to_string('admin/admin_widget.html',
                                 RequestContext(request, {
-            'widget': self,
-        }))
+                                    'widget': self,
+                                }))
 
     def generate_data(self, request):
         """Generates data for the widget.
@@ -92,7 +94,29 @@ class Widget(object):
         widget is displaying specific to, for example, the user, this should
         be overridden to include that data in the key.
         """
-        return "w-%s-%s" % (self.name, str(datetime.date.today()))
+        syncnum = get_sync_num()
+        key = "w-%s-%s-%s-%s" % (self.name,
+                                 datetime.date.today(),
+                                 request.user.username,
+                                 syncnum)
+        return key
+
+
+def get_sync_num():
+    """Get the sync_num, which is number to sync.
+
+    sync_num is number of update and initialized to 1 every day.
+    """
+    KEY = datetime.date.today()
+    cache.add(KEY, 1)
+    return cache.get(KEY)
+
+
+def increment_sync_num():
+    """Increment the sync_num."""
+    KEY = datetime.date.today()
+    if cache.get(KEY) is not None:
+        cache.incr(KEY)
 
 
 class UserActivityWidget(Widget):
@@ -101,7 +125,7 @@ class UserActivityWidget(Widget):
     Displays a pie chart of the active application users based on their last
     login dates.
     """
-    title = 'User Activity'
+    title = _('User Activity')
     size = Widget.LARGE
     template = 'admin/widgets/w-user-activity.html'
     actions = [
@@ -147,7 +171,7 @@ class ReviewRequestStatusesWidget(Widget):
 
     Displays a pie chart showing review request by status.
     """
-    title = 'Request Statuses'
+    title = _('Request Statuses')
     template = 'admin/widgets/w-request-statuses.html'
 
     def generate_data(self, request):
@@ -168,7 +192,7 @@ class RepositoriesWidget(Widget):
     """
     MAX_REPOSITORIES = 3
 
-    title = 'Repositories'
+    title = _('Repositories')
     size = Widget.LARGE
     template = 'admin/widgets/w-repositories.html'
     actions = [
@@ -191,8 +215,12 @@ class RepositoriesWidget(Widget):
         }
 
     def generate_cache_key(self, request):
-        return "w-%s-%s-%s" % (self.name, request.user.username,
-                               str(datetime.date.today()))
+        syncnum = get_sync_num()
+        key = "w-%s-%s-%s-%s" % (self.name,
+                                 datetime.date.today(),
+                                 request.user.username,
+                                 syncnum)
+        return key
 
 
 class ReviewGroupsWidget(Widget):
@@ -202,9 +230,8 @@ class ReviewGroupsWidget(Widget):
     """
     MAX_GROUPS = 5
 
-    title = 'Review Groups'
+    title = _('Review Groups')
     template = 'admin/widgets/w-groups.html'
-    icon = 'rb/images/admin/set-auth.png'
     actions = [
         {
             'url': 'db/reviews/group/',
@@ -228,9 +255,8 @@ class ServerCacheWidget(Widget):
 
     Displays a list of memcached statistics, if available.
     """
-    title = 'Server Cache'
+    title = _('Server Cache')
     template = 'admin/widgets/w-server-cache.html'
-    icon = 'rb/images/admin/set-storage.png'
     cache_data = False
 
     def generate_data(self, request):
@@ -247,7 +273,7 @@ class ServerCacheWidget(Widget):
                     uptime['unit'] = _("hours")
                 else:
                     uptime['value'] = stats['uptime'] / 60
-                    uptime['unit'] =  _("minutes")
+                    uptime['unit'] = _("minutes")
 
         return {
             'cache_stats': cache_stats,
@@ -260,9 +286,8 @@ class NewsWidget(Widget):
 
     Displays the latest news headlines from reviewboard.org.
     """
-    title = 'Review Board News'
+    title = _('Review Board News')
     template = 'admin/widgets/w-news.html'
-    icon = 'rb/images/rss.png'
     actions = [
         {
             'url': 'http://www.reviewboard.org/news/',
@@ -281,7 +306,7 @@ class DatabaseStatsWidget(Widget):
 
     Displays a list of totals for several important database tables.
     """
-    title = 'Database Stats'
+    title = _('Database Stats')
     template = 'admin/widgets/w-stats.html'
 
     def generate_data(self, request):
@@ -300,7 +325,7 @@ class RecentActionsWidget(Widget):
 
     Displays a list of recent admin actions to the user.
     """
-    title = 'Recent Actions'
+    title = _('Recent Actions')
     template = 'admin/widgets/w-recent-actions.html'
     has_data = False
 
@@ -320,24 +345,26 @@ def dynamic_activity_data(request):
     #
     # This takes the date from the request in YYYY-MM-DD format and
     # converts into a format suitable for QuerySet later on.
-    if range_end and range_start:
+    if range_end:
         range_end = datetime.datetime.fromtimestamp(
             time.mktime(time.strptime(range_end, "%Y-%m-%d")))
+
+    if range_start:
         range_start = datetime.datetime.fromtimestamp(
             time.mktime(time.strptime(range_start, "%Y-%m-%d")))
 
-    if direction == "next":
+    if direction == "next" and range_end:
         new_range_start = range_end
         new_range_end = \
             new_range_start + datetime.timedelta(days=days_total)
-    elif direction == "prev":
+    elif direction == "prev" and range_start:
         new_range_start = range_start - datetime.timedelta(days=days_total)
         new_range_end = range_start
-    elif direction == "same":
+    elif direction == "same" and range_start and range_end:
         new_range_start = range_start
         new_range_end = range_end
     else:
-        new_range_end = datetime.date.today()
+        new_range_end = datetime.date.today() + datetime.timedelta(days=1)
         new_range_start = new_range_end - datetime.timedelta(days=days_total)
 
     response_data = {
@@ -366,8 +393,9 @@ def dynamic_activity_data(request):
 
             for obj in q:
                 data.append([
-                    time.mktime(time.strptime(str(obj[timestampField]),
-                                              "%Y-%m-%d")) * 1000,
+                    time.mktime(time.strptime(
+                        six.text_type(obj[timestampField]),
+                        "%Y-%m-%d")) * 1000,
                     obj['created_count']
                 ])
 
@@ -404,7 +432,7 @@ class ActivityGraphWidget(Widget):
     All displayed widget data is computed on demand, rather than up-front
     during creation of the widget.
     """
-    title = 'Review Board Activity'
+    title = _('Review Board Activity')
     size = Widget.LARGE
     template = 'admin/widgets/w-stats-large.html'
     actions = [

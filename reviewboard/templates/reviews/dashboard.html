@@ -1,22 +1,11 @@
 {% extends "base.html" %}
-{% load djblets_deco %}
-{% load i18n %}
-{% load reviewtags %}
-{% load staticfiles %}
+{% load compressed djblets_deco i18n reviewtags staticfiles %}
 
 {% block title %}{% trans "My Dashboard" %}{% endblock %}
 
-{% block extrahead %}
-<meta http-equiv="refresh" content="300" />
-{% endblock %}
-
 {% block css %}
 {{block.super}}
-<link rel="stylesheet" type="text/css" href="{% static "djblets/css/datagrid.css" %}" />
-{% endblock %}
-
-{% block scripts-post %}
-<script type="text/javascript" src="{% static "djblets/js/datagrid.js" %}"></script>
+{% compressed_css "djblets-datagrid" %}
 {% endblock %}
 
 {% block content %}
@@ -28,20 +17,20 @@
    <col class="count" />
   </colgroup>
   <tbody>
-{% dashboard_entry "main-item" "Starred Reviews"  "starred" %}
-{% dashboard_entry "main-item" "Outgoing Reviews" "outgoing" %}
-{% dashboard_entry "main-item" "Incoming Reviews" "incoming" %}
-{% dashboard_entry "sub-item"  "To Me"            "to-me" %}
-{% for name, value in datagrid.counts.groups.items %}
+{% dashboard_entry "main-item" _("Starred Reviews")  "starred" %}
+{% dashboard_entry "main-item" _("Outgoing Reviews") "outgoing" %}
+{% dashboard_entry "main-item" _("Incoming Reviews") "incoming" %}
+{% dashboard_entry "sub-item"  _("To Me")            "to-me" %}
+{% for name, value in sidebar_counts.groups.items %}
 {%  dashboard_entry "sub-item" name "to-group" name %}
 {% endfor %}
-{% if datagrid.counts.starred_groups %}
-{%  dashboard_entry "main-item" "Watched Groups" "watched-groups" %}
-{%  for name, value in datagrid.counts.starred_groups.items %}
+{% if sidebar_counts.starred_groups %}
+{%  dashboard_entry "main-item" _("Watched Groups") "watched-groups" %}
+{%  for name, value in sidebar_counts.starred_groups.items %}
 {%   dashboard_entry "sub-item" name "to-group" name %}
 {%  endfor %}
 {% endif %}
-{% dashboard_entry "main-item" "All My Requests" "mine" %}
+{% dashboard_entry "main-item" _("All My Requests") "mine" %}
 {% for hook in sidebar_hooks %}
 {%  for main_entry in hook.entries %}
 {%   dashboard_entry "main-item" main_entry.label "url" main_entry.url %}
@@ -57,4 +46,33 @@
  </div>
 </div>
 {% endbox %}
-{% endblock %}
+{% endblock content %}
+
+{% block scripts-post %}
+{{block.super}}
+{% compressed_js "djblets-datagrid" %}
+<script type="text/javascript">
+    $(document).ready(function() {
+        var $dashboardWrapper = $('#dashboard-wrapper');
+
+        setInterval(function() {
+            var $editCols = $dashboardWrapper.find('.edit-columns');
+
+            $editCols
+                .width($editCols.width() - 1) {# Account for border #}
+                .children('img')
+                    .attr({
+                        src: '{% static "rb/images/spinner.gif" %}',
+                        width: 'auto',
+                        height: 'auto'
+                    });
+            $dashboardWrapper.load(window.location + ' #dashboard-wrapper',
+                                   function() {
+                $dashboardWrapper.find('time.timesince').timesince();
+                $dashboardWrapper.find('.datagrid-wrapper').datagrid();
+                $dashboardWrapper.find('.user').user_infobox();
+            });
+        }, 5 * 60 * 1000);
+    });
+</script>
+{% endblock scripts-post %}

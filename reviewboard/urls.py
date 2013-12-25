@@ -1,12 +1,15 @@
+from __future__ import unicode_literals
+
 import os
 
 from django.conf import settings
-from django.conf.urls.defaults import patterns, include, url
+from django.conf.urls import patterns, include, url
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.views.generic import RedirectView, TemplateView
 
 from reviewboard.extensions.base import get_extension_manager
-from reviewboard.webapi.resources import root_resource
+from reviewboard.webapi.resources import resources
 
 
 extension_manager = get_extension_manager()
@@ -22,11 +25,20 @@ if not admin.site._registry:
 
 
 # URLs global to all modes
-urlpatterns = patterns('',
+urlpatterns = patterns(
+    '',
+
     (r'^admin/extensions/', include('djblets.extensions.urls'),
      {'extension_manager': extension_manager}),
     (r'^admin/', include('reviewboard.admin.urls')),
+
+    url(r'^jsi18n/', 'djblets.util.views.cached_javascript_catalog',
+        {'packages': ('reviewboard', 'djblets')},
+        name='js-catalog')
 )
+
+
+urlpatterns += extension_manager.get_url_patterns()
 
 # Add static media if running in DEBUG mode
 if settings.DEBUG or getattr(settings, 'RUNNING_TEST', False):
@@ -54,32 +66,43 @@ if settings.DEBUG or getattr(settings, 'RUNNING_TEST', False):
     if not settings.PRODUCTION and not os.path.exists(settings.STATIC_ROOT):
         staticfiles_kwargs['view'] = 'django.contrib.staticfiles.views.serve'
 
-    urlpatterns += static(settings.STATIC_URL,
+    urlpatterns += static(settings.STATIC_DIRECTORY,
                           document_root=settings.STATIC_ROOT,
                           show_indexes=True,
                           **staticfiles_kwargs)
-    urlpatterns += static(settings.MEDIA_URL,
+    urlpatterns += static(settings.MEDIA_DIRECTORY,
                           document_root=settings.MEDIA_ROOT,
                           show_indexes=True)
 
-localsite_urlpatterns = patterns('',
-    url(r'^$', 'django.views.generic.simple.redirect_to',
-        {'url': 'dashboard/'},
-        name="root"),
+    urlpatterns += patterns(
+        '',
 
-    (r'^api/', include(root_resource.get_url_patterns())),
+        url(r'^js-tests/$',
+            TemplateView.as_view(template_name='js/tests.html')),
+    )
+
+localsite_urlpatterns = patterns(
+    '',
+
+    url(r'^$', RedirectView.as_view(url='dashboard/'), name="root"),
+
+    (r'^api/', include(resources.root.get_url_patterns())),
     (r'^r/', include('reviewboard.reviews.urls')),
 
     # Dashboard
     url(r'^dashboard/$',
         'reviewboard.reviews.views.dashboard', name="dashboard"),
 
+    # Support
+    url(r'^support/$',
+        'reviewboard.admin.views.support_redirect', name="support"),
+
     # Users
     url(r'^users/$',
         'reviewboard.reviews.views.submitter_list', name="all-users"),
-    url(r'^users/(?P<username>[A-Za-z0-9@_\-\.]+)/$',
+    url(r"^users/(?P<username>[A-Za-z0-9@_\-\.'\+]+)/$",
         'reviewboard.reviews.views.submitter', name="user"),
-    url(r'^users/(?P<username>[A-Za-z0-9@_\-\.]+)/infobox/$',
+    url(r"^users/(?P<username>[A-Za-z0-9@_\-\.'\+]+)/infobox/$",
         'reviewboard.reviews.views.user_infobox', name="user-infobox"),
 
     # Groups
@@ -93,7 +116,9 @@ localsite_urlpatterns = patterns('',
 
 
 # Main includes
-urlpatterns += patterns('',
+urlpatterns += patterns(
+    '',
+
     (r'^account/', include('reviewboard.accounts.urls')),
 
     (r'^s/(?P<local_site_name>[A-Za-z0-9\-_.]+)/',
@@ -101,10 +126,3 @@ urlpatterns += patterns('',
 )
 
 urlpatterns += localsite_urlpatterns
-
-
-# django.contrib
-urlpatterns += patterns('django.contrib',
-    url(r'^account/logout/$', 'auth.views.logout',
-        {'next_page': settings.LOGIN_URL}, name="logout")
-)

@@ -24,31 +24,59 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+from __future__ import unicode_literals
 
 import logging
 import os
 import re
-import urlparse
 
 from django import forms
 from django.contrib.sites.models import Site
-from django.core.cache import parse_backend_uri, InvalidCacheBackendError
+from django.conf import settings
+from django.core.cache import DEFAULT_CACHE_ALIAS
+from django.core.exceptions import ValidationError
 from django.utils.translation import ugettext as _
+from djblets.cache.backend_compat import normalize_cache_backend
+from djblets.forms.fields import TimeZoneField
 from djblets.log import restart_logging
 from djblets.siteconfig.forms import SiteSettingsForm
-from djblets.util.forms import TimeZoneField
+from djblets.util.compat import six
+from djblets.util.compat.six.moves.urllib.parse import urlparse
 
 from reviewboard.accounts.forms import LegacyAuthModuleSettingsForm
-from reviewboard.admin.checks import get_can_enable_search, \
-                                     get_can_enable_syntax_highlighting, \
-                                     get_can_use_amazon_s3, \
-                                     get_can_use_couchdb
+from reviewboard.admin.checks import (get_can_enable_search,
+                                      get_can_enable_syntax_highlighting,
+                                      get_can_use_amazon_s3,
+                                      get_can_use_couchdb)
 from reviewboard.admin.siteconfig import load_site_config
+from reviewboard.admin.support import get_install_key
 from reviewboard.ssh.client import SSHClient
 
 
 class GeneralSettingsForm(SiteSettingsForm):
     """General settings for Review Board."""
+    CACHE_TYPE_CHOICES = (
+        ('memcached', _('Memcached')),
+        ('file', _('File cache')),
+    )
+
+    CACHE_BACKENDS_MAP = {
+        'file': 'django.core.cache.backends.filebased.FileBasedCache',
+        'memcached': 'django.core.cache.backends.memcached.CacheClass',
+        'locmem': 'django.core.cache.backends.locmem.LocMemCache',
+    }
+
+    CACHE_TYPES_MAP = {
+        'django.core.cache.backends.filebased.FileBasedCache': 'file',
+        'django.core.cache.backends.memcached.CacheClass': 'memcached',
+        'django.core.cache.backends.locmem.LocMemCache': 'locmem',
+    }
+
+    CACHE_LOCATION_FIELD_MAP = {
+        'file': 'cache_path',
+        'memcached': 'cache_host',
+    }
+
     server = forms.CharField(
         label=_("Server"),
         help_text=_("The URL of this Review Board server. This should not "
@@ -89,19 +117,29 @@ class GeneralSettingsForm(SiteSettingsForm):
         required=False,
         widget=forms.TextInput(attrs={'size': '50'}))
 
-    cache_backend = forms.CharField(
+    cache_type = forms.ChoiceField(
         label=_("Cache Backend"),
-        help_text=_("The path to the cache backend."
-                    "Example: 'memcached://127.0.0.1:11211/'"),
-        required=False,
+        choices=CACHE_TYPE_CHOICES,
+        help_text=_('The type of server-side caching to use.'),
+        required=True)
+
+    cache_path = forms.CharField(
+        label=_("Cache Path"),
+        help_text=_('The file location for the cache.'),
+        required=True,
+        widget=forms.TextInput(attrs={'size': '50'}))
+
+    cache_host = forms.CharField(
+        label=_("Cache Hosts"),
+        help_text=_('The host or hosts used for the cache, in hostname:port '
+                    'form. Multiple hosts can be specified by separating '
+                    'them with a semicolon (;).'),
+        required=True,
         widget=forms.TextInput(attrs={'size': '50'}))
 
     def load(self):
-        # First set some sane defaults.
         domain_method = self.siteconfig.get("site_domain_method")
         site = Site.objects.get_current()
-        self.fields['server'].initial = "%s://%s" % (domain_method,
-                                                     site.domain)
 
         can_enable_search, reason = get_can_enable_search()
         if not can_enable_search:
@@ -109,8 +147,39 @@ class GeneralSettingsForm(SiteSettingsForm):
             self.disabled_fields['search_index_file'] = True
             self.disabled_reasons['search_enable'] = reason
 
+        # Load the rest of the settings from the form.
         super(GeneralSettingsForm, self).load()
 
+        # Load the cache settings.
+        cache_backend = normalize_cache_backend(
+            self.siteconfig.get('cache_backend'))
+
+        cache_type = self.CACHE_TYPES_MAP.get(cache_backend['BACKEND'],
+                                              'custom')
+        self.fields['cache_type'].initial = cache_type
+
+        if settings.DEBUG:
+            self.fields['cache_type'].choices += (
+                ('locmem', _('Local memory cache')),
+            )
+
+        if cache_type == 'custom':
+            self.fields['cache_type'].choices += (
+                ('custom', _('Custom')),
+            )
+            cache_locations = []
+        elif cache_type != 'locmem':
+            cache_locations = cache_backend['LOCATION']
+
+            if not isinstance(cache_locations, list):
+                cache_locations = [cache_locations]
+
+            location_field = self.CACHE_LOCATION_FIELD_MAP[cache_type]
+            self.fields[location_field].initial = ';'.join(cache_locations)
+
+        # This must come after we've loaded the general settings.
+        self.fields['server'].initial = "%s://%s" % (domain_method,
+                                                     site.domain)
 
     def save(self):
         server = self.cleaned_data['server']
@@ -120,7 +189,7 @@ class GeneralSettingsForm(SiteSettingsForm):
             # believes the domain is actually the path. So we apply a prefix.
             server = "http://" + server
 
-        url_parts = urlparse.urlparse(server)
+        url_parts = urlparse(server)
         domain_method = url_parts[0]
         domain_name = url_parts[1]
 
@@ -133,21 +202,59 @@ class GeneralSettingsForm(SiteSettingsForm):
 
         self.siteconfig.set("site_domain_method", domain_method)
 
+        cache_type = self.cleaned_data['cache_type']
+
+        if cache_type != 'custom':
+            if cache_type == 'locmem':
+                # We want to specify a "reviewboard" location to keep items
+                # separate from those in other caches.
+                location = 'reviewboard'
+            else:
+                location_field = self.CACHE_LOCATION_FIELD_MAP[cache_type]
+                location = self.cleaned_data[location_field]
+
+                if cache_type == 'memcached':
+                    # memcached allows a list of servers, rather than just a
+                    # string representing one.
+                    location = location.split(';')
+
+            self.siteconfig.set('cache_backend', {
+                DEFAULT_CACHE_ALIAS: {
+                    'BACKEND': self.CACHE_BACKENDS_MAP[cache_type],
+                    'LOCATION': location,
+                }
+            })
+
         super(GeneralSettingsForm, self).save()
 
         # Reload any important changes into the Django settings.
         load_site_config()
 
-    def clean_cache_backend(self):
-        """Validates that the specified cache backend is parseable by Django."""
-        backend = self.cleaned_data['cache_backend'].strip()
-        if backend:
-            try:
-                parse_backend_uri(backend)
-            except InvalidCacheBackendError, e:
-                raise forms.ValidationError(e)
+    def full_clean(self):
+        cache_type = self['cache_type'].data or self['cache_type'].initial
 
-        return backend
+        for iter_cache_type, field in six.iteritems(self.CACHE_LOCATION_FIELD_MAP):
+            self.fields[field].required = (cache_type == iter_cache_type)
+
+        return super(GeneralSettingsForm, self).full_clean()
+
+    def clean_cache_host(self):
+        cache_host = self.cleaned_data['cache_host'].strip()
+
+        if self.fields['cache_host'].required and not cache_host:
+            raise ValidationError(
+                _('A valid cache host must be provided.'))
+
+        return cache_host
+
+    def clean_cache_path(self):
+        cache_path = self.cleaned_data['cache_path'].strip()
+
+        if self.fields['cache_path'].required and not cache_path:
+            raise ValidationError(
+                _('A valid cache path must be provided.'))
+
+        return cache_path
 
     def clean_search_index_file(self):
         """Validates that the specified index file is valid."""
@@ -155,37 +262,40 @@ class GeneralSettingsForm(SiteSettingsForm):
 
         if index_file:
             if not os.path.isabs(index_file):
-                raise forms.ValidationError(
+                raise ValidationError(
                     _("The search index path must be absolute."))
 
             if (os.path.exists(index_file) and
-                not os.access(index_file, os.W_OK)):
-                raise forms.ValidationError(
+                    not os.access(index_file, os.W_OK)):
+                raise ValidationError(
                     _('The search index path is not writable. Make sure the '
                       'web server has write access to it and its parent '
                       'directory.'))
 
         return index_file
 
-
     class Meta:
         title = _("General Settings")
-        save_blacklist = ('server',)
+        save_blacklist = ('server', 'cache_type', 'cache_host', 'cache_path')
 
         fieldsets = (
             {
                 'classes': ('wide',),
-                'title':   _("Site Settings"),
-                'fields':  ('server', 'site_media_url',
-                            'site_admin_name',
-                            'site_admin_email',
-                            'locale_timezone',
-                            'cache_backend'),
+                'title': _("Site Settings"),
+                'fields': ('server', 'site_media_url',
+                           'site_admin_name',
+                           'site_admin_email',
+                           'locale_timezone'),
             },
             {
                 'classes': ('wide',),
-                'title':   _("Search"),
-                'fields':  ('search_enable', 'search_index_file'),
+                'title': _('Cache Settings'),
+                'fields': ('cache_type', 'cache_path', 'cache_host'),
+            },
+            {
+                'classes': ('wide',),
+                'title': _("Search"),
+                'fields': ('search_enable', 'search_index_file'),
             },
         )
 
@@ -193,7 +303,6 @@ class GeneralSettingsForm(SiteSettingsForm):
 class AuthenticationSettingsForm(SiteSettingsForm):
     CUSTOM_AUTH_ID = 'custom'
     CUSTOM_AUTH_CHOICE = (CUSTOM_AUTH_ID, _('Legacy Authentication Module'))
-
 
     auth_anonymous_access = forms.BooleanField(
         label=_("Allow anonymous read-only access"),
@@ -248,7 +357,7 @@ class AuthenticationSettingsForm(SiteSettingsForm):
                     builtin_auth_choice = choice
                 else:
                     backend_choices.append(choice)
-            except Exception, e:
+            except Exception as e:
                 logging.error('Error loading authentication backend %s: %s'
                               % (backend_id, e),
                               exc_info=1)
@@ -259,10 +368,10 @@ class AuthenticationSettingsForm(SiteSettingsForm):
         self.fields['auth_backend'].choices = backend_choices
 
     def load(self):
+        super(AuthenticationSettingsForm, self).load()
+
         self.fields['auth_anonymous_access'].initial = \
             not self.siteconfig.get("auth_require_sitewide_login")
-
-        super(AuthenticationSettingsForm, self).load()
 
     def save(self):
         self.siteconfig.set("auth_require_sitewide_login",
@@ -295,13 +404,13 @@ class AuthenticationSettingsForm(SiteSettingsForm):
         if self.data:
             # Note that this isn't validated yet, but that's okay given our
             # usage. It's a bit of a hack though.
-            auth_backend = self['auth_backend'].data or \
-                           self.fields['auth_backend'].initial
+            auth_backend = (self['auth_backend'].data or
+                            self.fields['auth_backend'].initial)
 
             if auth_backend in self.auth_backend_forms:
                 self.auth_backend_forms[auth_backend].full_clean()
         else:
-            for form in self.auth_backend_forms.values():
+            for form in six.itervalues(self.auth_backend_forms):
                 form.full_clean()
 
     class Meta:
@@ -311,9 +420,7 @@ class AuthenticationSettingsForm(SiteSettingsForm):
         fieldsets = (
             {
                 'classes': ('wide',),
-                'title':   _('General'),
-                'fields':  ('auth_anonymous_access',
-                            'auth_backend'),
+                'fields': ('auth_anonymous_access', 'auth_backend'),
             },
         )
 
@@ -325,6 +432,9 @@ class EMailSettingsForm(SiteSettingsForm):
     mail_send_review_mail = forms.BooleanField(
         label=_("Send e-mails for review requests and reviews"),
         required=False)
+    mail_send_review_close_mail = forms.BooleanField(
+        label=_("Send e-mails when review requests are closed"),
+        required=False)
     mail_send_new_user_mail = forms.BooleanField(
         label=_("Send e-mails when new users register an account"),
         required=False)
@@ -333,30 +443,37 @@ class EMailSettingsForm(SiteSettingsForm):
         help_text=_('The e-mail address that all e-mails will be sent from. '
                     'The "Sender" header will be used to make e-mails appear '
                     'to come from the user triggering the e-mail.'),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '50'}))
     mail_host = forms.CharField(
         label=_("Mail Server"),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '50'}))
     mail_port = forms.IntegerField(
         label=_("Port"),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '5'}))
     mail_host_user = forms.CharField(
         label=_("Username"),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '30', 'autocomplete': 'off'}))
     mail_host_password = forms.CharField(
-        widget=forms.PasswordInput,
+        widget=forms.PasswordInput(attrs={'size': '30', 'autocomplete': 'off'}),
         label=_("Password"),
         required=False)
     mail_use_tls = forms.BooleanField(
         label=_("Use TLS for authentication"),
         required=False)
 
+    def clean_mail_host(self):
+        # Strip whitespaces from the SMTP address.
+        return self.cleaned_data['mail_host'].strip()
+
     def save(self):
         super(EMailSettingsForm, self).save()
 
         # Reload any important changes into the Django settings.
         load_site_config()
-
 
     class Meta:
         title = _("E-Mail Settings")
@@ -372,7 +489,8 @@ class DiffSettingsForm(SiteSettingsForm):
         label=_("Syntax highlighting threshold"),
         help_text=_("Files with lines greater than this number will not have "
                     "syntax highlighting.  Enter 0 for no limit."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '5'}))
 
     diffviewer_show_trailing_whitespace = forms.BooleanField(
         label=_("Show trailing whitespace"),
@@ -386,30 +504,35 @@ class DiffSettingsForm(SiteSettingsForm):
         required=False,
         help_text=_("A comma-separated list of file patterns for which all "
                     "whitespace changes should be shown. "
-                    "(e.g., \"*.py, *.txt\")"))
+                    "(e.g., \"*.py, *.txt\")"),
+        widget=forms.TextInput(attrs={'size': '60'}))
 
     diffviewer_context_num_lines = forms.IntegerField(
         label=_("Lines of Context"),
         help_text=_("The number of unchanged lines shown above and below "
                     "changed lines."),
-        initial=5)
+        initial=5,
+        widget=forms.TextInput(attrs={'size': '5'}))
 
     diffviewer_paginate_by = forms.IntegerField(
         label=_("Paginate by"),
         help_text=_("The number of files to display per page in the diff "
                     "viewer."),
-        initial=20)
+        initial=20,
+        widget=forms.TextInput(attrs={'size': '5'}))
 
     diffviewer_paginate_orphans = forms.IntegerField(
         label=_("Paginate orphans"),
         help_text=_("The number of extra files required before adding another "
                     "page to the diff viewer."),
-        initial=10)
+        initial=10,
+        widget=forms.TextInput(attrs={'size': '5'}))
 
     diffviewer_max_diff_size = forms.IntegerField(
-        label=_('Max diff size'),
+        label=_('Max diff size (bytes)'),
         help_text=_('The maximum size (in bytes) for any given diff. Enter 0 '
-                    'to disable size restrictions.'))
+                    'to disable size restrictions.'),
+        widget=forms.TextInput(attrs={'size': '15'}))
 
     def load(self):
         # TODO: Move this check into a dependencies module so we can catch it
@@ -422,24 +545,22 @@ class DiffSettingsForm(SiteSettingsForm):
             self.disabled_fields['diffviewer_syntax_highlighting_threshold'] = True
             self.disabled_reasons['diffviewer_syntax_highlighting_threshold'] = _(reason)
 
+        super(DiffSettingsForm, self).load()
         self.fields['include_space_patterns'].initial = \
             ', '.join(self.siteconfig.get('diffviewer_include_space_patterns'))
 
-        super(DiffSettingsForm, self).load()
-
     def save(self):
-        self.siteconfig.set('diffviewer_include_space_patterns',
+        self.siteconfig.set(
+            'diffviewer_include_space_patterns',
             re.split(r",\s*", self.cleaned_data['include_space_patterns']))
 
         super(DiffSettingsForm, self).save()
-
 
     class Meta:
         title = _("Diff Viewer Settings")
         save_blacklist = ('include_space_patterns',)
         fieldsets = (
             {
-                'title': _("General"),
                 'classes': ('wide',),
                 'fields': ('diffviewer_syntax_highlighting',
                            'diffviewer_syntax_highlighting_threshold',
@@ -463,6 +584,14 @@ class DiffSettingsForm(SiteSettingsForm):
 
 
 class LoggingSettingsForm(SiteSettingsForm):
+    LOG_LEVELS = (
+        ('DEBUG', _('Debug')),
+        ('INFO', _('Info')),
+        ('WARNING', _('Warning')),
+        ('ERROR', _('Error')),
+        ('CRITICAL', _('Critical')),
+    )
+
     """Logging settings for Review Board."""
     logging_enabled = forms.BooleanField(
         label=_("Enable logging"),
@@ -475,7 +604,16 @@ class LoggingSettingsForm(SiteSettingsForm):
         label=_("Log directory"),
         help_text=_("The directory where log files will be stored. This must "
                     "be writable by the web server."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '60'}))
+
+    logging_level = forms.ChoiceField(
+        label=_("Log level"),
+        help_text=_("Indicates the logging threshold. Please note that this "
+                    "may increase the size of the log files if a low "
+                    "threshold is selected."),
+        required=False,
+        choices=LOG_LEVELS)
 
     logging_allow_profiling = forms.BooleanField(
         label=_("Allow code profiling"),
@@ -489,13 +627,13 @@ class LoggingSettingsForm(SiteSettingsForm):
         logging_dir = self.cleaned_data['logging_directory']
 
         if not os.path.exists(logging_dir):
-            raise forms.ValidationError(_("This path does not exist."))
+            raise ValidationError(_("This path does not exist."))
 
         if not os.path.isdir(logging_dir):
-            raise forms.ValidationError(_("This is not a directory."))
+            raise ValidationError(_("This is not a directory."))
 
         if not os.access(logging_dir, os.W_OK):
-            raise forms.ValidationError(
+            raise ValidationError(
                 _("This path is not writable by the web server."))
 
         return logging_dir
@@ -507,42 +645,45 @@ class LoggingSettingsForm(SiteSettingsForm):
         load_site_config()
         restart_logging()
 
-
     class Meta:
         title = _("Logging Settings")
         fieldsets = (
             {
-                'title':   _('General'),
                 'classes': ('wide',),
-                'fields':  ('logging_enabled',
-                            'logging_directory'),
+                'fields': ('logging_enabled',
+                           'logging_directory',
+                           'logging_level'),
             },
             {
-                'title':   _('Advanced'),
+                'title': _('Advanced'),
                 'classes': ('wide',),
-                'fields':  ('logging_allow_profiling',),
+                'fields': ('logging_allow_profiling',),
             }
         )
 
 
 class SSHSettingsForm(forms.Form):
+    """SSH key settings for Review Board."""
     generate_key = forms.BooleanField(required=False,
                                       initial=True,
                                       widget=forms.HiddenInput)
     keyfile = forms.FileField(label=_('Key file'),
                               required=False,
                               widget=forms.FileInput(attrs={'size': '35'}))
+    delete_key = forms.BooleanField(required=False,
+                                    initial=True,
+                                    widget=forms.HiddenInput)
 
     def create(self, files):
         if self.cleaned_data['generate_key']:
             try:
                 SSHClient().generate_user_key()
-            except IOError, e:
+            except IOError as e:
                 self.errors['generate_key'] = forms.util.ErrorList([
                     _('Unable to write SSH key file: %s') % e
                 ])
                 raise
-            except Exception, e:
+            except Exception as e:
                 self.errors['generate_key'] = forms.util.ErrorList([
                     _('Error generating SSH key: %s') % e
                 ])
@@ -550,16 +691,34 @@ class SSHSettingsForm(forms.Form):
         elif self.cleaned_data['keyfile']:
             try:
                 SSHClient().import_user_key(files['keyfile'])
-            except IOError, e:
+            except IOError as e:
                 self.errors['keyfile'] = forms.util.ErrorList([
                     _('Unable to write SSH key file: %s') % e
                 ])
                 raise
-            except Exception, e:
+            except Exception as e:
                 self.errors['keyfile'] = forms.util.ErrorList([
                     _('Error uploading SSH key: %s') % e
                 ])
                 raise
+
+    def did_request_delete(self):
+        """Return whether the user has requested to delete the user SSH key"""
+        return 'delete_key' in self.cleaned_data
+
+    def delete(self):
+        """Try to delete the user SSH key upon request"""
+        if self.cleaned_data['delete_key']:
+            try:
+                SSHClient().delete_user_key()
+            except Exception as e:
+                self.errors['delete_key'] = forms.util.ErrorList([
+                    _('Unable to delete SSH key file: %s') % e
+                ])
+                raise
+
+    class Meta:
+        title = _('SSH Settings')
 
 
 class StorageSettingsForm(SiteSettingsForm):
@@ -569,9 +728,9 @@ class StorageSettingsForm(SiteSettingsForm):
         label=_('File storage method'),
         choices=(
             ('filesystem', _('Host file system')),
-            ('s3',         _('Amazon S3')),
+            ('s3', _('Amazon S3')),
             # TODO: I haven't tested CouchDB at all, so it's turned off
-            #('couchdb',    _('CouchDB')),
+            #('couchdb', _('CouchDB')),
         ),
         help_text=_('Storage method and location for uploaded files, such as '
                     'screenshots and file attachments.'),
@@ -581,18 +740,21 @@ class StorageSettingsForm(SiteSettingsForm):
         label=_('Amazon AWS access key'),
         help_text=_('Your Amazon AWS access key ID. This can be found in '
                     'the "Security Credentials" section of the AWS site.'),
-        required=True)
+        required=True,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     aws_secret_access_key = forms.CharField(
         label=_('Amazon AWS secret access key'),
         help_text=_('Your Amazon AWS secret access ID. This can be found in '
                     'the "Security Credentials" section of the AWS site.'),
-        required=True)
+        required=True,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     aws_s3_bucket_name = forms.CharField(
         label=_('S3 bucket name'),
         help_text=_('Bucket name inside Amazon S3.'),
-        required=True)
+        required=True,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     aws_calling_format = forms.ChoiceField(
         label=_('Amazon AWS calling format'),
@@ -601,7 +763,7 @@ class StorageSettingsForm(SiteSettingsForm):
             (2, 'Subdomain'),
             (3, 'Vanity'),
         ),
-        help_text=_('Calling format for AWS requests.'), # FIXME: what do these mean?
+        help_text=_('Calling format for AWS requests.'),
         required=True)
 
     # TODO: these items are consumed in the S3Storage backend, but I'm not
@@ -620,8 +782,8 @@ class StorageSettingsForm(SiteSettingsForm):
         help_text=_('For example, "http://couchdb.local:5984"'),
         required=True)
 
-    # TODO: this is consumed in the CouchDBStorage backend, but I'm not sure how
-    # to let users set it via siteconfig, since it's a dictionary. Since I
+    # TODO: this is consumed in the CouchDBStorage backend, but I'm not sure
+    # how to let users set it via siteconfig, since it's a dictionary. Since I
     # haven't tested the CouchDB backend at all, it'll just sit here for now.
     #
     #'couchdb_storage_options': 'COUCHDB_STORAGE_OPTIONS',
@@ -656,8 +818,8 @@ class StorageSettingsForm(SiteSettingsForm):
         if self.data:
             # Note that this isn't validated yet, but that's okay given our
             # usage. It's a bit of a hack though.
-            storage_backend = self['storage_backend'].data or \
-                              self.fields['storage_backend'].initial
+            storage_backend = (self['storage_backend'].data or
+                               self.fields['storage_backend'].initial)
 
             if storage_backend != 's3':
                 set_fieldset_required('storage_s3', False)
@@ -673,22 +835,62 @@ class StorageSettingsForm(SiteSettingsForm):
         fieldsets = (
             {
                 'classes': ('wide',),
-                'title':   _('File Storage Settings'),
-                'fields':  ('storage_backend',),
+                'fields': ('storage_backend',),
             },
             {
-                'id':      'storage_s3',
+                'id': 'storage_s3',
                 'classes': ('wide', 'hidden'),
-                'title':   _('Amazon S3 Settings'),
-                'fields':  ('aws_access_key_id',
-                            'aws_secret_access_key',
-                            'aws_s3_bucket_name',
-                            'aws_calling_format'),
+                'title': _('Amazon S3 Settings'),
+                'fields': ('aws_access_key_id',
+                           'aws_secret_access_key',
+                           'aws_s3_bucket_name',
+                           'aws_calling_format'),
             },
             {
-                'id':      'storage_couchdb',
-                'classes': ('wide' 'hidden'),
-                'title':   _('CouchDB Settings'),
-                'fields':  ('couchdb_default_server',),
+                'id': 'storage_couchdb',
+                'classes': ('wide', 'hidden'),
+                'title': _('CouchDB Settings'),
+                'fields': ('couchdb_default_server',),
             },
         )
+
+
+class SupportSettingsForm(SiteSettingsForm):
+    """Support settings for Review Board."""
+    install_key = forms.CharField(
+        label=_('Install key'),
+        help_text=_('The installation key to provide when purchasing a '
+                    'support contract.'),
+        required=False,
+        widget=forms.TextInput(attrs={
+            'size': '80',
+            'disabled': 'disabled'
+        }))
+
+    support_url = forms.CharField(
+        label=_('Custom Support URL'),
+        help_text=_("The location of your organization's own Review Board "
+                    "support page. Leave blank to use the default support "
+                    "page."),
+        required=False,
+        widget=forms.TextInput(attrs={'size': '80'}))
+
+    def load(self):
+        super(SupportSettingsForm, self).load()
+        self.fields['install_key'].initial = get_install_key()
+
+    class Meta:
+        title = _('Support Settings')
+        save_blacklist = ('install_key',)
+        fieldsets = ({
+            'classes': ('wide',),
+            'description': (
+                '<p>For fast one-on-one support, plus other benefits, '
+                'purchase a <a href="'
+                'http://www.beanbaginc.com/support/contracts/">'
+                'support contract</a>.</p>'
+                '<p>You can also customize where your users will go for '
+                'support by changing the Custom Support URL below. If left '
+                'blank, they will be taken to our support channel.</p>'),
+            'fields': ('install_key', 'support_url'),
+        },)

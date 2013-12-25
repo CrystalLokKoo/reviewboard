@@ -1,18 +1,32 @@
+from __future__ import unicode_literals
+
 import os
-import urlparse
 
 import paramiko
+from djblets.util.compat import six
 
 from reviewboard.ssh.client import SSHClient
-from reviewboard.ssh.errors import BadHostKeyError, SSHAuthenticationError, \
-                                   SSHError
+from reviewboard.ssh.errors import (BadHostKeyError, SSHAuthenticationError,
+                                    SSHError)
 from reviewboard.ssh.policy import RaiseUnknownHostKeyPolicy
+
+
+SSH_PORT = 22
+
+
+try:
+    import urlparse
+    uses_netloc = urlparse.uses_netloc
+    urllib_parse = urlparse.urlparse
+except ImportError:
+    import urllib.parse
+    uses_netloc = urllib.parse.uses_netloc
+    urllib_parse = urllib.parse.urlparse
 
 
 # A list of known SSH URL schemes.
 ssh_uri_schemes = ["ssh", "sftp"]
-
-urlparse.uses_netloc.extend(ssh_uri_schemes)
+uses_netloc.extend(ssh_uri_schemes)
 
 
 def humanize_key(key):
@@ -22,10 +36,10 @@ def humanize_key(key):
 
 def is_ssh_uri(url):
     """Returns whether or not a URL represents an SSH connection."""
-    return urlparse.urlparse(url)[0] in ssh_uri_schemes
+    return urllib_parse(url)[0] in ssh_uri_schemes
 
 
-def check_host(hostname, username=None, password=None, namespace=None):
+def check_host(netloc, username=None, password=None, namespace=None):
     """
     Checks if we can connect to a host with a known key.
 
@@ -40,6 +54,13 @@ def check_host(hostname, username=None, password=None, namespace=None):
 
     kwargs = {}
 
+    if ':' in netloc:
+        hostname, port = netloc.split(':')
+        port = int(port)
+    else:
+        hostname = netloc
+        port = SSH_PORT
+
     # We normally want to notify on unknown host keys, but not when running
     # unit tests.
     if getattr(settings, 'RUNNING_TEST', False):
@@ -47,11 +68,11 @@ def check_host(hostname, username=None, password=None, namespace=None):
         kwargs['allow_agent'] = False
 
     try:
-        client.connect(hostname, username=username, password=password,
+        client.connect(hostname, port, username=username, password=password,
                        pkey=client.get_user_key(), **kwargs)
-    except paramiko.BadHostKeyException, e:
+    except paramiko.BadHostKeyException as e:
         raise BadHostKeyError(e.hostname, e.key, e.expected_key)
-    except paramiko.AuthenticationException, e:
+    except paramiko.AuthenticationException as e:
         # Some AuthenticationException instances have allowed_types set,
         # and some don't.
         allowed_types = getattr(e, 'allowed_types', [])
@@ -62,11 +83,12 @@ def check_host(hostname, username=None, password=None, namespace=None):
             key = None
 
         raise SSHAuthenticationError(allowed_types=allowed_types, user_key=key)
-    except paramiko.SSHException, e:
-        if str(e) == 'No authentication methods available':
+    except paramiko.SSHException as e:
+        msg = six.text_type(e)
+        if msg == 'No authentication methods available':
             raise SSHAuthenticationError
         else:
-            raise SSHError(unicode(e))
+            raise SSHError(msg)
 
 
 def register_rbssh(envvar):

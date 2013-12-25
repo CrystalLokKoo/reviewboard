@@ -1,5 +1,7 @@
+from __future__ import unicode_literals
+
 from django import template
-from django.core.urlresolvers import NoReverseMatch
+from django.core.urlresolvers import NoReverseMatch, ViewDoesNotExist
 from django.template.defaulttags import url as django_url
 
 
@@ -36,12 +38,12 @@ class LocalSiteURLNode(template.Node):
 
             try:
                 return self.url_node.render(context)
-            except NoReverseMatch:
+            except (NoReverseMatch, ViewDoesNotExist):
                 # We'll try it again without those arguments.
                 pass
 
-        self.url_node.args = self.args
-        self.url_node.kwargs = self.kwargs
+        self.url_node.args = list(self.args)
+        self.url_node.kwargs = self.kwargs.copy()
 
         return self.url_node.render(context)
 

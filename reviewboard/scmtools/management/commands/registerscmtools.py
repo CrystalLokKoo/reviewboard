@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import pkg_resources
 import sys
 
@@ -16,7 +18,7 @@ class Command(NoArgsCommand):
         for entry in pkg_resources.iter_entry_points("reviewboard.scmtools"):
             try:
                 scmtool_class = entry.load()
-            except Exception, e:
+            except Exception as e:
                 sys.stderr.write("Unable to load SCMTool %s: %s\n" %
                                  (entry, e))
                 continue
@@ -26,10 +28,10 @@ class Command(NoArgsCommand):
 
             if class_name not in registered_tools:
                 registered_tools[class_name] = True
-                name = scmtool_class.name or \
-                       scmtool_class.__name__.replace("Tool", "")
+                name = (scmtool_class.name or
+                        scmtool_class.__name__.replace("Tool", ""))
 
-                print "Registering new SCM Tool %s (%s) in database" % \
-                      (name, class_name)
+                self.stdout.write("Registering new SCM Tool %s (%s) in "
+                                  "database" % (name, class_name))
 
                 Tool.objects.create(name=name, class_name=class_name)

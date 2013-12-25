@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import print_function, unicode_literals
+
 import getpass
 import imp
 import os
@@ -13,10 +15,15 @@ import warnings
 from optparse import OptionGroup, OptionParser
 from random import choice
 
+from djblets.util.compat import six
+from djblets.util.compat.six.moves import input
+
 from reviewboard import get_version_string
 
 
 DOCS_BASE = "http://www.reviewboard.org/docs/manual/dev/"
+
+SITELIST_FILE_UNIX = "/etc/reviewboard/sites"
 
 
 # See if GTK is a possibility.
@@ -108,7 +115,7 @@ class Dependencies(object):
 
             if missing_deps:
                 if (dep_info['required'] and
-                    len(missing_deps) == len(dep_info['dependencies'])):
+                        len(missing_deps) == len(dep_info['dependencies'])):
                     fatal = True
                     text = "%s (required)" % dep_info['title']
                 else:
@@ -137,6 +144,11 @@ class Dependencies(object):
 
 
 class Site(object):
+    CACHE_BACKENDS = {
+        'memcached': 'django.core.cache.backends.memcached.MemcachedCache',
+        'file': 'django.core.cache.backends.filebased.FileBasedCache',
+    }
+
     def __init__(self, install_dir, options):
         self.install_dir = install_dir
         self.abs_install_dir = os.path.abspath(install_dir)
@@ -146,6 +158,7 @@ class Site(object):
 
         # State saved during installation
         self.domain_name = None
+        self.web_server_port = None
         self.site_root = None
         self.static_url = None
         self.media_url = None
@@ -177,7 +190,7 @@ class Site(object):
         self.mkdir(os.path.join(self.install_dir, "conf"))
 
         self.mkdir(os.path.join(self.install_dir, "tmp"))
-        os.chmod(os.path.join(self.install_dir, "tmp"), 0777)
+        os.chmod(os.path.join(self.install_dir, "tmp"), 0o777)
 
         self.mkdir(os.path.join(self.install_dir, "data"))
 
@@ -191,9 +204,10 @@ class Site(object):
         self.mkdir(os.path.join(media_dir, "uploaded", "images"))
         self.mkdir(os.path.join(media_dir, "ext"))
 
-        self.link_pkg_dir("reviewboard",
-                          "htdocs/errordocs",
-                          os.path.join(self.install_dir, "htdocs", "errordocs"))
+        self.link_pkg_dir(
+            "reviewboard",
+            "htdocs/errordocs",
+            os.path.join(self.install_dir, "htdocs", "errordocs"))
 
         rb_djblets_src = "htdocs/static/djblets"
         rb_djblets_dest = os.path.join(static_dir, "djblets")
@@ -208,16 +222,6 @@ class Site(object):
                           "htdocs/static/admin",
                           os.path.join(static_dir, 'admin'))
 
-        # Link from Djblets if available.
-        if pkg_resources.resource_exists("djblets", "media"):
-            self.link_pkg_dir("djblets", "static", rb_djblets_dest)
-        elif pkg_resources.resource_exists("reviewboard", rb_djblets_src):
-            self.link_pkg_dir("reviewboard", rb_djblets_src,
-                              rb_djblets_dest)
-        else:
-            ui.error("Unable to find the Djblets media path. Make sure "
-                     "Djblets is installed and try this again.")
-
         # Remove any old media directories from old sites
         self.unlink_media_dir(os.path.join(media_dir, 'admin'))
         self.unlink_media_dir(os.path.join(media_dir, 'djblets'))
@@ -225,32 +229,39 @@ class Site(object):
 
         # Generate .htaccess files that enable compression and
         # never expires various file types.
-        htaccess  = '<IfModule mod_expires.c>\n'
-        htaccess += '  <FilesMatch "\.(jpg|gif|png|css|js|htc)">\n'
-        htaccess += '    ExpiresActive on\n'
-        htaccess += '    ExpiresDefault "access plus 1 year"\n'
-        htaccess += '  </FilesMatch>\n'
-        htaccess += '</IfModule>\n'
-        htaccess += '\n'
-        htaccess += '<IfModule mod_deflate.c>\n'
-
-        for mimetype in ["text/html", "text/plain", "text/xml",
-                         "text/css", "text/javascript",
-                         "application/javascript",
-                         "application/x-javascript"]:
-            htaccess += "  AddOutputFilterByType DEFLATE %s\n" % mimetype
-
-        htaccess += '</IfModule>\n'
+        htaccess = '\n'.join([
+            '<IfModule mod_expires.c>',
+            '  <FilesMatch "\.(jpg|gif|png|css|js|htc)">',
+            '    ExpiresActive on',
+            '    ExpiresDefault "access plus 1 year"',
+            '  </FilesMatch>',
+            '</IfModule>',
+            '',
+            '<IfModule mod_deflate.c>',
+        ] + [
+            '  AddOutputFilterByType DEFLATE %s' % mimetype
+            for mimetype in [
+                'text/html',
+                'text/plain',
+                'text/xml',
+                'text/css',
+                'text/javascript',
+                'application/javascript',
+                'application/x-javascript',
+            ]
+        ] + [
+            '</IfModule>',
+        ])
 
         for dirname in (static_dir, media_dir):
-            fp = open(os.path.join(dirname, '.htaccess'), 'w')
-            fp.write(htaccess)
-            fp.close()
+            with open(os.path.join(dirname, '.htaccess'), 'w') as fp:
+                fp.write(htaccess)
 
     def setup_settings(self):
         # Make sure that we have our settings_local.py in our path for when
         # we need to run manager commands.
         sys.path.insert(0, os.path.join(self.abs_install_dir, "conf"))
+        os.environ['DJANGO_SETTINGS_MODULE'] = 'reviewboard.settings'
 
     def generate_config_files(self):
         web_conf_filename = ""
@@ -287,12 +298,12 @@ class Site(object):
             fcgi_filename = os.path.join(htdocs_dir, "reviewboard.fcgi")
             self.process_template("cmdline/conf/reviewboard.fcgi.in",
                                   fcgi_filename)
-            os.chmod(fcgi_filename, 0755)
+            os.chmod(fcgi_filename, 0o755)
         elif enable_wsgi:
             wsgi_filename = os.path.join(htdocs_dir, "reviewboard.wsgi")
             self.process_template("cmdline/conf/reviewboard.wsgi.in",
                                   wsgi_filename)
-            os.chmod(wsgi_filename, 0755)
+            os.chmod(wsgi_filename, 0o755)
 
         # Generate a secret key based on Django's code.
         secret_key = ''.join([
@@ -315,9 +326,13 @@ class Site(object):
         fp.write("DATABASES = {\n")
         fp.write("    'default': {\n")
         fp.write("        'ENGINE': 'django.db.backends.%s',\n" % db_engine)
-        fp.write("        'NAME': '%s',\n" % self.db_name.replace("\\", "\\\\"))
+        fp.write("        'NAME': '%s',\n"
+                 % self.db_name.replace("\\", "\\\\"))
 
         if self.db_type != "sqlite3":
+            if ':' in self.db_host:
+                self.db_host, self.db_port = self.db_host.split(':', 1)
+
             fp.write("        'USER': '%s',\n" % (self.db_user or ""))
             fp.write("        'PASSWORD': '%s',\n" % (self.db_pass or ""))
             fp.write("        'HOST': '%s',\n" % (self.db_host or ""))
@@ -331,13 +346,20 @@ class Site(object):
         fp.write("SECRET_KEY = '%s'\n" % secret_key)
         fp.write("\n")
         fp.write("# Cache backend settings.\n")
-        fp.write("CACHE_BACKEND = '%s'\n" % self.cache_info)
+        fp.write("CACHES = {\n")
+        fp.write("    'default': {\n")
+        fp.write("        'BACKEND': '%s',\n" %
+                 self.CACHE_BACKENDS[self.cache_type])
+        fp.write("        'LOCATION': '%s',\n" % self.cache_info)
+        fp.write("    },\n")
+        fp.write("}\n")
         fp.write("\n")
         fp.write("# Extra site information.\n")
         fp.write("SITE_ID = 1\n")
         fp.write("SITE_ROOT = '%s'\n" % self.site_root)
         fp.write("FORCE_SCRIPT_NAME = ''\n")
         fp.write("DEBUG = False\n")
+        fp.write("ALLOWED_HOSTS = ['%s']\n" % (self.domain_name or '*'))
         fp.close()
 
         self.setup_settings()
@@ -369,27 +391,41 @@ class Site(object):
         resolved_update = manual_updates.get('static-media', False)
 
         return (not resolved_update and
-                pkg_resources.parse_version(siteconfig.version) <
-                    pkg_resources.parse_version("1.7"))
+                (pkg_resources.parse_version(siteconfig.version) <
+                 pkg_resources.parse_version("1.7")))
 
     def get_settings_upgrade_needed(self):
         """Determines whether or not a settings upgrade is needed."""
         try:
             import settings_local
 
-            return hasattr(settings_local, 'DATABASE_ENGINE')
+            if (hasattr(settings_local, 'DATABASE_ENGINE') or
+                    hasattr(settings_local, 'CACHE_BACKEND')):
+                return True
+
+            if hasattr(settings_local, 'DATABASES'):
+                engine = settings_local.DATABASES['default']['ENGINE']
+
+                if not engine.startswith('django.db.backends'):
+                    return True
         except ImportError:
             sys.stderr.write("Unable to import settings_local. "
                              "Cannot determine if upgrade is needed.\n")
-            return False
+
+        return False
 
     def upgrade_settings(self):
         """Performs a settings upgrade."""
         settings_file = os.path.join(self.abs_install_dir, "conf",
                                      "settings_local.py")
+        perform_upgrade = False
         buf = []
         database_info = {}
         database_keys = ('ENGINE', 'NAME', 'USER', 'PASSWORD', 'HOST', 'PORT')
+        backend_info = {}
+
+        from django.core.cache import (parse_backend_uri,
+                                       InvalidCacheBackendError)
 
         try:
             import settings_local
@@ -399,7 +435,8 @@ class Site(object):
 
                 # Don't convert anything other than the ones we know about,
                 # or third parties with custom databases may have problems.
-                if engine in ('sqlite3', 'mysql', 'postgresql'):
+                if engine in ('sqlite3', 'mysql', 'postgresql',
+                              'postgresql_psycopg2'):
                     engine = 'django.db.backends.' + engine
 
                 database_info['ENGINE'] = engine
@@ -408,13 +445,33 @@ class Site(object):
                     if key != 'ENGINE':
                         database_info[key] = getattr(settings_local,
                                                      'DATABASE_%s' % key, '')
+
+                perform_upgrade = True
+
+            if hasattr(settings_local, 'DATABASES'):
+                engine = settings_local.DATABASES['default']['ENGINE']
+
+                if engine == 'postgresql_psycopg2':
+                    perform_upgrade = True
+
+            if hasattr(settings_local, 'CACHE_BACKEND'):
+                try:
+                    backend_info = parse_backend_uri(
+                        settings_local.CACHE_BACKEND)
+                    perform_upgrade = True
+                except InvalidCacheBackendError:
+                    pass
         except ImportError:
             sys.stderr.write("Unable to import settings_local for upgrade.\n")
+            return
+
+        if not perform_upgrade:
             return
 
         fp = open(settings_file, 'r')
 
         found_database = False
+        found_cache = False
 
         for line in fp.readlines():
             if line.startswith('DATABASE_'):
@@ -431,6 +488,20 @@ class Site(object):
 
                     buf.append("    },\n")
                     buf.append("}\n")
+            elif line.startswith('CACHE_BACKEND') and backend_info:
+                if not found_cache:
+                    found_cache = True
+
+                    buf.append("CACHES = {\n")
+                    buf.append("    'default': {\n")
+                    buf.append("        'BACKEND': '%s',\n"
+                               % self.CACHE_BACKENDS[backend_info[0]])
+                    buf.append("        'LOCATION': '%s',\n" % backend_info[1])
+                    buf.append("    },\n")
+                    buf.append("}\n")
+            elif line.strip().startswith("'ENGINE': 'postgresql_psycopg2'"):
+                buf.append("        'ENGINE': '"
+                           "django.db.backends.postgresql_psycopg2',\n")
             else:
                 buf.append(line)
 
@@ -439,6 +510,12 @@ class Site(object):
         fp = open(settings_file, 'w')
         fp.writelines(buf)
         fp.close()
+
+        # Reload the settings module
+        del sys.modules['settings_local']
+        del sys.modules['reviewboard.settings']
+        import django.conf
+        django.conf.settings = django.conf.LazySettings()
 
     def create_admin_user(self):
         """
@@ -487,7 +564,7 @@ class Site(object):
                         _commands[name] = module_globals['Command']()
 
             execute_manager(reviewboard.settings, [__file__, cmd] + params)
-        except ImportError, e:
+        except ImportError as e:
             ui.error("Unable to execute the manager command %s: %s" %
                      (cmd, e))
 
@@ -533,15 +610,16 @@ class Site(object):
         sitedir = os.path.abspath(self.install_dir).replace("\\", "/")
 
         # Check if this is a .exe.
-        if (hasattr(sys, "frozen") or    # new py2exe
-            hasattr(sys, "importers") or # new py2exe
-            imp.is_frozen("__main__")):  # tools/freeze
+        if (hasattr(sys, "frozen") or         # new py2exe
+                hasattr(sys, "importers") or  # new py2exe
+                imp.is_frozen("__main__")):   # tools/freeze
             rbsite_path = sys.executable
         else:
             rbsite_path = '"%s" "%s"' % (sys.executable, sys.argv[0])
 
         data = {
             'rbsite': rbsite_path,
+            'port': self.web_server_port,
             'sitedir': sitedir,
             'sitedomain': self.domain_name,
             'sitedomain_escaped': domain_name_escaped,
@@ -550,12 +628,62 @@ class Site(object):
             'siteroot_noslash': self.site_root[1:-1],
         }
 
-        template = re.sub("@([a-z_]+)@", lambda m: data.get(m.group(1)),
+        template = re.sub(r"@([a-z_]+)@", lambda m: data.get(m.group(1)),
                           template)
 
         fp = open(dest_filename, "w")
         fp.write(template)
         fp.close()
+
+
+class SiteList(object):
+    """Maintains the list of sites installed on the system."""
+    def __init__(self, path):
+        self.path = path
+
+        # Read the list in as a unique set.
+        # This way, we can easily eliminate duplicates.
+        self.sites = set()
+
+        if os.path.exists(self.path):
+            f = open(self.path, 'r')
+
+            for line in f:
+                site = line.strip()
+
+                # Verify that this path exists on the system
+                # And add it to the dictionary.
+                if os.path.exists(site):
+                    self.sites.add(site)
+
+            f.close()
+
+    def add_site(self, site_path):
+        self.sites.add(site_path)
+
+        # Write all of the sites back to the file.
+        # Sort keys to ensure consistent order.
+        ordered_sites = list(self.sites)
+        ordered_sites.sort()
+
+        # Create the parent directory of the site
+        # if it doesn't already exist
+        if not os.path.exists(os.path.dirname(self.path)):
+            # Create the parent directory with read-write
+            # permissions for user but read and execute
+            # only for others.
+            try:
+                os.makedirs(os.path.dirname(self.path), 0o755)
+            except:
+                # We shouldn't consider this an abort-worthy error
+                # We'll warn the user and just complete setup
+                print("WARNING: Could not save site to sitelist %s" %
+                      self.path)
+                return
+
+        with open(self.path, 'w') as f:
+            for site in ordered_sites:
+                f.write("%s\n" % site)
 
 
 class UIToolkit(object):
@@ -669,9 +797,9 @@ class ConsoleUI(UIToolkit):
         if on_show_func:
             on_show_func()
 
-        print
-        print
-        print self.header_wrapper.fill(text)
+        print()
+        print()
+        print(self.header_wrapper.fill(text))
 
         return True
 
@@ -690,7 +818,7 @@ class ConsoleUI(UIToolkit):
             self.text(page, "The default is %s" % default)
             prompt = "%s [%s]" % (prompt, default)
 
-        print
+        print()
 
         prompt += ": "
         value = None
@@ -699,7 +827,7 @@ class ConsoleUI(UIToolkit):
             if password:
                 value = getpass.getpass(prompt)
             else:
-                value = raw_input(prompt)
+                value = input(prompt)
 
             if not value:
                 if default:
@@ -733,7 +861,7 @@ class ConsoleUI(UIToolkit):
             description = ''
             enabled = True
 
-            if isinstance(choice, basestring):
+            if isinstance(choice, six.string_types):
                 text = choice
             elif len(choice) == 2:
                 text, enabled = choice
@@ -746,13 +874,13 @@ class ConsoleUI(UIToolkit):
                 valid_choices.append(text)
                 i += 1
 
-        print
+        print()
 
         prompt += ": "
         choice = None
 
         while not choice:
-            choice = raw_input(prompt)
+            choice = input(prompt)
 
             if choice not in valid_choices:
                 try:
@@ -768,7 +896,7 @@ class ConsoleUI(UIToolkit):
 
         setattr(save_obj, save_var, choice)
 
-    def text(self, page, text, leading_newline=True):
+    def text(self, page, text, leading_newline=True, wrap=True):
         """
         Displays a block of text to the user.
 
@@ -778,9 +906,12 @@ class ConsoleUI(UIToolkit):
             return
 
         if leading_newline:
-            print
+            print()
 
-        print self.text_wrapper.fill(text)
+        if wrap:
+            print(self.text_wrapper.fill(text))
+        else:
+            print('    %s' % text)
 
     def disclaimer(self, page, text):
         self.text(page, 'NOTE: %s' % text)
@@ -789,7 +920,7 @@ class ConsoleUI(UIToolkit):
         """
         Displays a URL to the user.
         """
-        self.text(page, url)
+        self.text(page, url, wrap=False)
 
     def itemized_list(self, page, title, items):
         """
@@ -808,14 +939,14 @@ class ConsoleUI(UIToolkit):
         """
         sys.stdout.write("%s ... " % text)
         func()
-        print "OK"
+        print("OK")
 
     def error(self, text, done_func=None):
         """
         Displays a block of error text to the user.
         """
-        print
-        print self.error_wrapper.fill(text)
+        print()
+        print(self.error_wrapper.fill(text))
 
         if done_func:
             done_func()
@@ -961,8 +1092,9 @@ class GtkUI(UIToolkit):
         hbox.connect(
             'expose-event',
             lambda w, e: w.get_window().draw_rectangle(
-                             w.get_style().base_gc[w.state], True,
-                             *w.get_allocation()))
+                w.get_style().base_gc[w.state],
+                True,
+                *w.get_allocation()))
 
         # Add the logo
         logo_file = pkg_resources.resource_filename(
@@ -1039,7 +1171,8 @@ class GtkUI(UIToolkit):
         if password:
             entry.set_visibility(False)
             if not save_var.startswith('reenter'):
-                page['validators'].append(lambda: self.confirm_reentry(site, save_var))
+                page['validators'].append(
+                    lambda: self.confirm_reentry(site, save_var))
 
         if default:
             entry.set_text(default)
@@ -1096,7 +1229,7 @@ class GtkUI(UIToolkit):
             description = ''
             enabled = True
 
-            if isinstance(choice, basestring):
+            if isinstance(choice, six.string_types):
                 text = choice
             elif len(choice) == 2:
                 text, enabled = choice
@@ -1172,7 +1305,7 @@ class GtkUI(UIToolkit):
             label.set_alignment(0, 0)
 
         for item in items:
-            self.text(page, u"    \u2022 %s" % item)
+            self.text(page, "    \u2022 %s" % item)
 
     def step(self, page, text, func):
         """
@@ -1246,12 +1379,13 @@ class InstallCommand(Command):
     needs_ui = True
 
     def add_options(self, parser):
-        isWin = (platform.system() == "Windows")
+        is_windows = platform.system() == "Windows"
 
         group = OptionGroup(parser, "'install' command",
                             self.__doc__.strip())
         group.add_option("--copy-media", action="store_true",
-                         dest="copy_media", default=isWin,
+                         dest="copy_media",
+                         default=is_windows,
                          help="copy media files instead of symlinking")
 
         group.add_option("--noinput", action="store_true", default=False,
@@ -1285,14 +1419,25 @@ class InstallCommand(Command):
                               "or file cache directory)")
         group.add_option("--web-server-type",
                          help="web server (apache or lighttpd)")
+        group.add_option("--web-server-port",
+                         help="port that the web server should listen on",
+                         default='80')
         group.add_option("--python-loader",
-                         help="python loader for apache (modpython, fastcgi or wsgi)")
+                         help="python loader for apache (modpython, fastcgi "
+                              "or wsgi)")
         group.add_option("--admin-user", default="admin",
                          help="the site administrator's username")
         group.add_option("--admin-password",
                          help="the site administrator's password")
         group.add_option("--admin-email",
                          help="the site administrator's e-mail address")
+
+        # UNIX-specific arguments
+        if not is_windows:
+            group.add_option("--sitelist",
+                             default=SITELIST_FILE_UNIX,
+                             help="the path to a file storing a list of "
+                                  "installed sites")
 
         parser.add_option_group(group)
 
@@ -1323,6 +1468,7 @@ class InstallCommand(Command):
             self.ask_web_server_type()
             self.ask_python_loader()
             self.ask_admin_user()
+            # Do not ask for sitelist file, it should not be common.
 
         self.show_install_status()
         self.show_finished()
@@ -1365,7 +1511,8 @@ class InstallCommand(Command):
             # Likely a permission error.
             ui.error("Unable to create the %s directory. Make sure "
                      "you're running as an administrator and that the "
-                     "directory does not contain any files." % site.install_dir,
+                     "directory does not contain any files."
+                     % site.install_dir,
                      done_func=lambda: sys.exit(1))
             return False
 
@@ -1401,7 +1548,6 @@ class InstallCommand(Command):
                 ui.itemized_list(page, group['title'], group['dependencies'])
 
         return fatal
-
 
     def ask_domain(self):
         page = ui.page("What's the host name for this site?")
@@ -1457,13 +1603,15 @@ class InstallCommand(Command):
     def ask_database_type(self):
         page = ui.page("What database type will you be using?")
 
-        ui.prompt_choice(page, "Database Type",
-                         [("mysql", Dependencies.get_support_mysql()),
-                          ("postgresql", Dependencies.get_support_postgresql()),
-                          ("sqlite3",
-                           "(not supported for production use)",
-                           Dependencies.get_support_sqlite())],
-                         save_obj=site, save_var="db_type")
+        ui.prompt_choice(
+            page, "Database Type",
+            [
+                ("mysql", Dependencies.get_support_mysql()),
+                ("postgresql", Dependencies.get_support_postgresql()),
+                ("sqlite3", "(not supported for production use)",
+                 Dependencies.get_support_sqlite())
+            ],
+            save_obj=site, save_var="db_type")
 
     def ask_database_name(self):
         def determine_sqlite_path():
@@ -1497,12 +1645,6 @@ class InstallCommand(Command):
                         save_obj=site, save_var="db_name")
 
     def ask_database_host(self):
-        def normalize_host_port(value):
-            if ":" in value:
-                value, site.db_port = value.split(":", 1)
-
-            return value
-
         page = ui.page("What is the database server's address?",
                        is_visible_func=lambda: site.db_type != "sqlite3")
 
@@ -1511,7 +1653,6 @@ class InstallCommand(Command):
                       "port for the database type.")
 
         ui.prompt_input(page, "Database Server", site.db_host,
-                        normalize_func=normalize_host_port,
                         save_obj=site, save_var="db_host")
 
     def ask_database_login(self):
@@ -1526,8 +1667,9 @@ class InstallCommand(Command):
                         save_obj=site, save_var="db_user")
         ui.prompt_input(page, "Database Password", site.db_pass, password=True,
                         save_obj=site, save_var="db_pass")
-        ui.prompt_input(page, "Confirm Database Password", site.db_pass, password=True,
-                        save_obj=site, save_var="reenter_db_pass")
+        ui.prompt_input(page, "Confirm Database Password", site.db_pass,
+                        password=True, save_obj=site,
+                        save_var="reenter_db_pass")
 
     def ask_cache_type(self):
         page = ui.page("What cache mechanism should be used?")
@@ -1543,14 +1685,13 @@ class InstallCommand(Command):
 
     def ask_cache_info(self):
         # Appears only if using memcached.
-        page = ui.page("What memcached connection string should be used?",
+        page = ui.page("What memcached host should be used?",
                        is_visible_func=lambda: site.cache_type == "memcached")
 
-        ui.text(page, "This is generally in the format of "
-                      "memcached://hostname:port/")
+        ui.text(page, "This is in the format of hostname:port")
 
         ui.prompt_input(page, "Memcache Server",
-                        site.cache_info or "memcached://localhost:11211/",
+                        site.cache_info or "localhost:11211",
                         save_obj=site, save_var="cache_info")
 
         # Appears only if using file caching.
@@ -1559,7 +1700,6 @@ class InstallCommand(Command):
 
         ui.prompt_input(page, "Cache Directory",
                         site.cache_info or "/tmp/reviewboard_cache",
-                        normalize_func=lambda value: "file://" + value,
                         save_obj=site, save_var="cache_info")
 
     def ask_web_server_type(self):
@@ -1570,16 +1710,17 @@ class InstallCommand(Command):
 
     def ask_python_loader(self):
         page = ui.page("What Python loader module will you be using?",
-                       is_visible_func=lambda: site.web_server_type == "apache")
+                       is_visible_func=lambda: (site.web_server_type ==
+                                                "apache"))
 
         ui.text(page, "Based on our experiences, we recommend using "
                       "wsgi with Review Board.")
 
         ui.prompt_choice(page, "Python Loader",
                          [
-                          ("wsgi", "(recommended)", True),
-                          "fastcgi",
-                          ("modpython", "(no longer supported)", True),
+                             ("wsgi", "(recommended)", True),
+                             "fastcgi",
+                             ("modpython", "(no longer supported)", True),
                          ],
                          save_obj=site, save_var="python_loader")
 
@@ -1600,8 +1741,9 @@ class InstallCommand(Command):
                         save_obj=site, save_var="admin_user")
         ui.prompt_input(page, "Password", site.admin_password, password=True,
                         save_obj=site, save_var="admin_password")
-        ui.prompt_input(page, "Confirm Password", site.admin_password, password=True,
-                        save_obj=site, save_var="reenter_admin_password")
+        ui.prompt_input(page, "Confirm Password", site.admin_password,
+                        password=True, save_obj=site,
+                        save_var="reenter_admin_password")
         ui.prompt_input(page, "E-Mail Address", site.admin_email,
                         save_obj=site, save_var="admin_email")
 
@@ -1637,7 +1779,7 @@ class InstallCommand(Command):
         ])
 
         ui.text(page, "For more information, visit:")
-        ui.urllink(page, "%sadmin/sites/creating-sites/" % DOCS_BASE)
+        ui.urllink(page, "%sadmin/installation/creating-sites/" % DOCS_BASE)
 
     def save_settings(self):
         """
@@ -1673,6 +1815,15 @@ class InstallCommand(Command):
         siteconfig.set("site_admin_email", site.admin_email)
         siteconfig.save()
 
+        if platform.system() != 'Windows':
+            abs_sitelist = os.path.abspath(site.sitelist)
+
+            # Add the site to the sitelist file.
+            print("Saving site %s to the sitelist %s\n" % (
+                  site.install_dir, abs_sitelist))
+            sitelist = SiteList(abs_sitelist)
+            sitelist.add_site(site.install_dir)
+
 
 class UpgradeCommand(Command):
     """
@@ -1685,49 +1836,62 @@ class UpgradeCommand(Command):
         group.add_option("--no-db-upgrade", action="store_false",
                          dest="upgrade_db", default=True,
                          help="don't upgrade the database")
+        group.add_option("--all-sites", action="store_true",
+                         dest="all_sites", default=False,
+                         help="Upgrade all installed sites")
         parser.add_option_group(group)
 
     def run(self):
         site.setup_settings()
 
-        data_dir_exists = os.path.exists(os.path.join(site.install_dir, "data"))
+        static_media_upgrade_needed = site.get_static_media_upgrade_needed()
+        data_dir_exists = os.path.exists(
+            os.path.join(site.install_dir, "data"))
 
-        print "Rebuilding directory structure"
+        print("Rebuilding directory structure")
         site.rebuild_site_directory()
 
         if site.get_settings_upgrade_needed():
-            print "Upgrading site settings_local.py"
+            print("Upgrading site settings_local.py")
             site.upgrade_settings()
 
         if options.upgrade_db:
-            print "Updating database. This may take a while."
+            print("Updating database. This may take a while.\n"
+                  "\n"
+                  "The log output below, including warnings and errors,\n"
+                  "can be ignored unless upgrade fails.\n"
+                  "\n"
+                  "------------------ <begin log output> ------------------")
             site.sync_database()
             site.migrate_database()
-
-            print "Resetting in-database caches."
+            print("------------------- <end log output> -------------------\n"
+                  "\n"
+                  "Resetting in-database caches.")
             site.run_manage_command("fixreviewcounts")
 
-        print "Upgrade complete."
+        print()
+        print("Upgrade complete!")
 
         if not data_dir_exists:
             # This is an upgrade of a site that pre-dates the new $HOME
             # directory ($sitedir/data). Tell the user how to upgrade things.
-            print
-            print "A new 'data' directory has been created inside of your site"
-            print "directory. This will act as the home directory for programs"
-            print "invoked by Review Board."
-            print
-            print "You need to change the ownership of this directory so that"
-            print "the web server can write to it."
-            print
-            print "If using mod_python, you will also need to add the following"
-            print "to your Review Board Apache configuration:"
-            print
-            print "    SetEnv HOME %s" % os.path.join(site.abs_install_dir,
-                                                      "data")
+            print()
+            print("A new 'data' directory has been created inside of your site")
+            print("directory. This will act as the home directory for "
+                  "programs")
+            print("invoked by Review Board.")
+            print()
+            print("You need to change the ownership of this directory so that")
+            print("the web server can write to it.")
+            print()
+            print("If using mod_python, you will also need to add the "
+                  " following")
+            print("to your Review Board Apache configuration:")
+            print()
+            print("    SetEnv HOME %s" % os.path.join(site.abs_install_dir,
+                                                      "data"))
 
-
-        if site.get_static_media_upgrade_needed():
+        if static_media_upgrade_needed:
             from djblets.siteconfig.models import SiteConfiguration
             from django.conf import settings
 
@@ -1742,26 +1906,42 @@ class UpgradeCommand(Command):
             static_dir = "%s/htdocs/static" % \
                          site.abs_install_dir.replace('\\', '/')
 
-            print
-            print "The location of static media files (CSS, JavaScript, images)"
-            print "has changed. You will need to make manual changes to "
-            print "your web server configuration."
-            print
-            print "For Apache, you will need to add:"
-            print
-            print "    Alias %sstatic \"%s\"" % (settings.SITE_ROOT,
-                                                 static_dir)
-            print
-            print "For lighttpd, add the following to alias.url:"
-            print
-            print "    \"%sstatic\" => \"%s\"" % (settings.SITE_ROOT,
-                                                  static_dir)
-            print
-            print "Once you have made these changes, type the following "
-            print "to resolve this:"
-            print
-            print "    $ rb-site manage %s resolve-check static-media" % \
-                  site.abs_install_dir
+            print()
+            print("The location of static media files (CSS, JavaScript, "
+                  "images)")
+            print("has changed. You will need to make manual changes to ")
+            print("your web server configuration.")
+            print()
+            print("For Apache, you will need to add:")
+            print()
+            print("    <Location \"%sstatic\">" % settings.SITE_ROOT)
+            print("        SetHandler None")
+            print("    </Location>")
+            print()
+            print("    Alias %sstatic \"%s\"" % (settings.SITE_ROOT,
+                                                 static_dir))
+            print()
+            print("For lighttpd:")
+            print()
+            print("    alias.url = (")
+            print("        ...")
+            print("        \"%sstatic\" => \"%s\"," % (settings.SITE_ROOT,
+                                                       static_dir))
+            print("        ...")
+            print("    )")
+            print()
+            print("    url.rewrite-once = (")
+            print("        ...")
+            print("        \"^(%sstatic/.*)$\" => \"$1\"," %
+                  settings.SITE_ROOT)
+            print("        ...")
+            print("    )")
+            print()
+            print("Once you have made these changes, type the following ")
+            print("to resolve this:")
+            print()
+            print("    $ rb-site manage %s resolve-check static-media" %
+                  site.abs_install_dir)
 
 
 class ManageCommand(Command):
@@ -1800,7 +1980,6 @@ def parse_options(args):
                       action="store_true", dest="debug", default=DEBUG,
                       help="display debug output")
 
-
     sorted_commands = list(COMMANDS.keys())
     sorted_commands.sort()
 
@@ -1808,32 +1987,43 @@ def parse_options(args):
         command = COMMANDS[cmd_name]
         command.add_options(parser)
 
-
     (options, args) = parser.parse_args(args)
 
     if options.noinput:
         options.force_console = True
 
-    # We expect at least two args (command and install path)
-    if len(args) < 2 or args[0] not in COMMANDS.keys():
+    if len(args) < 1:
         parser.print_help()
         sys.exit(1)
 
     command = args[0]
-    install_dir = args[1]
+
+    # Check whether we've been asked to upgrade all installed sites
+    # by 'rb-site upgrade' with no path specified.
+    if command == 'upgrade' and options.all_sites:
+        sitelist = SiteList(options.sitelist)
+        site_paths = sitelist.sites
+
+        if len(site_paths) == 0:
+            print("No Review Board sites listed in %s" % sitelist.path)
+            sys.exit(1)
+    elif len(args) >= 2 and command in COMMANDS:
+        site_paths = [args[1]]
+    else:
+        parser.print_help()
+        sys.exit(1)
 
     globals()["args"] = args[2:]
 
-    return (command, install_dir)
+    return (command, site_paths)
 
 
 def main():
     global site
     global ui
 
-    command_name, install_dir = parse_options(sys.argv[1:])
+    command_name, site_paths = parse_options(sys.argv[1:])
     command = COMMANDS[command_name]
-    site = Site(install_dir, options)
 
     if command.needs_ui and can_use_gtk and not options.force_console:
         ui = GtkUI()
@@ -1841,8 +2031,13 @@ def main():
     if not ui:
         ui = ConsoleUI()
 
-    command.run()
-    ui.run()
+    for install_dir in site_paths:
+        site = Site(install_dir, options)
+
+        os.putenv('HOME', os.path.join(site.install_dir, "data"))
+
+        command.run()
+        ui.run()
 
 
 if __name__ == "__main__":

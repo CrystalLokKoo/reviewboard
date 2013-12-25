@@ -1,4 +1,7 @@
-from django import forms
+from __future__ import unicode_literals
+
+from django.core.exceptions import ValidationError
+from django.utils.translation import ugettext as _
 
 
 def validate_bug_tracker(input_url):
@@ -16,10 +19,8 @@ def validate_bug_tracker(input_url):
         # Ensure an arbitrary value can be inserted into the URL string
         test_url = test_url % 1
     except (TypeError, ValueError):
-        raise forms.ValidationError(["%s has invalid format specification "
-                                     "type(s). Use only one '%%s' to mark the "
-                                     "location of the bug id. If the URI "
-                                     "contains encoded values (e.g. '%%20'), "
-                                     "prepend the encoded values with an "
-                                     "additional '%%'."
-                                     % input_url])
+        raise ValidationError([
+            _("%s has invalid format specification type(s). Use only one "
+              "'%%s' to mark the location of the bug id. If the URI contains "
+              "encoded values (e.g. '%%20'), prepend the encoded values with "
+              "an additional '%%'.") % input_url])

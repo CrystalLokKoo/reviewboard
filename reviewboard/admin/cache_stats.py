@@ -1,3 +1,6 @@
+from __future__ import unicode_literals
+
+import logging
 import socket
 
 try:
@@ -9,29 +12,32 @@ except ImportError:
         memcache = None
 
 from django.conf import settings
-from django.core.cache import parse_backend_uri
 
 
 def get_memcached_hosts():
-    """
-    Returns the hosts currently configured for memcached.
-    """
+    """Returns the hosts currently configured for memcached."""
     if not memcache:
         return None
 
-    scheme, host, params = parse_backend_uri(settings.CACHE_BACKEND)
+    cache_info = settings.CACHES['default']
+    backend = cache_info['BACKEND']
+    locations = cache_info.get('LOCATION', [])
 
-    if scheme == "memcached":
-        return host.split(";")
+    if (not backend.startswith('django.core.cache.backends.memcached') or
+            not locations):
+        return []
 
-    return None
+    if not isinstance(locations, list):
+        locations = [locations]
+
+    return locations
 
 
 def get_has_cache_stats():
     """
     Returns whether or not cache stats are supported.
     """
-    return get_memcached_hosts() != None
+    return get_memcached_hosts() is not None
 
 
 def get_cache_stats():
@@ -47,17 +53,21 @@ def get_cache_stats():
     all_stats = []
 
     for hostname in hostnames:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        host, port = hostname.split(":")
+        try:
+            host, port = hostname.split(":")
+        except ValueError:
+            logging.error('Invalid cache hostname "%s"' % hostname)
+            continue
 
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect((host, int(port)))
         except socket.error:
             s.close()
             continue
 
-        s.send("stats\r\n")
-        data = s.recv(2048)
+        s.send(b"stats\r\n")
+        data = s.recv(2048).decode('ascii')
         s.close()
 
         stats = {}

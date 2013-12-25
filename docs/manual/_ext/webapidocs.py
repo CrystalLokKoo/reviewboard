@@ -2,6 +2,7 @@
 Sphinx plugins for web API docs.
 """
 import inspect
+import logging
 import re
 import sys
 
@@ -13,26 +14,25 @@ except ImportError:
 from django.contrib.auth.models import User
 from django.http import HttpRequest
 from django.template.defaultfilters import title
+from djblets.util.http import is_mimetype_a
 from djblets.webapi.core import WebAPIResponseError
 from djblets.webapi.resources import get_resource_from_class, WebAPIResource
 from docutils import nodes
 from docutils.parsers.rst import directives
 from docutils.statemachine import ViewList
 from reviewboard import initialize
-from reviewboard.webapi.resources import root_resource, FileDiffResource
+from reviewboard.webapi.resources import resources
 from sphinx import addnodes
 from sphinx.util import docname_join
 from sphinx.util.compat import Directive
 
 
 # Mapping of mimetypes to language names for syntax highlighting.
-MIMETYPE_LANGUAGE_MAPPING = {
-    'application/json': 'javascript',
-    'application/xml': 'xml',
-    'text/x-patch': 'diff',
-    FileDiffResource.DIFF_DATA_MIMETYPE_JSON: 'javascript',
-    FileDiffResource.DIFF_DATA_MIMETYPE_XML: 'xml',
-}
+MIMETYPE_LANGUAGES = [
+    ('application/json', 'javascript'),
+    ('application/xml', 'xml'),
+    ('text/x-patch', 'diff'),
+]
 
 
 # Initialize Review Board
@@ -40,16 +40,21 @@ initialize()
 
 
 # Build the list of parents.
-root_resource.get_url_patterns()
+resources.root.get_url_patterns()
 
 
 class ResourceNotFound(Exception):
     def __init__(self, directive, classname):
+        self.classname = classname
         self.error_node = [
             directive.state_machine.reporter.error(
-                'Unable to import the web API resource class "%s"' % classname,
+                str(self),
                 line=directive.lineno)
         ]
+
+    def __str__(self):
+        return ('Unable to import the web API resource class "%s"'
+                % self.classname)
 
 
 class ErrorNotFound(Exception):
@@ -94,9 +99,15 @@ class ResourceDirective(Directive):
     item_http_methods = set(['GET', 'DELETE', 'PUT'])
     list_http_methods = set(['GET', 'POST'])
 
+    FILTERED_MIMETYPES = [
+        'application/json',
+        'application/xml',
+    ]
+
     type_mapping = {
         int: 'Integer',
         str: 'String',
+        unicode: 'String',
         bool: 'Boolean',
         dict: 'Dictionary',
         file: 'Uploaded File',
@@ -125,9 +136,18 @@ class ResourceDirective(Directive):
         self.state.document.note_explicit_target(targetnode)
         main_section = nodes.section(ids=[docname])
 
-        # Details section
+        # Main section
         main_section += nodes.title(text=resource_title)
-        main_section += self.build_details_table(resource)
+        main_section += parse_text(
+            self, inspect.getdoc(resource),
+            where='%s class docstring' % self.options['classname'])
+
+        # Details section
+        details_section = nodes.section(ids=['details'])
+        main_section += details_section
+
+        details_section += nodes.title(text='Details')
+        details_section += self.build_details_table(resource)
 
         # Fields section
         if (resource.fields and
@@ -162,20 +182,55 @@ class ResourceDirective(Directive):
             has_examples = False
 
             if is_list:
-                allowed_mimetypes = resource.allowed_list_mimetypes
+                mimetype_key = 'list'
             else:
-                allowed_mimetypes = resource.allowed_item_mimetypes
+                mimetype_key = 'item'
 
-            for mimetype in allowed_mimetypes:
-                example_node = build_example(
-                    self.fetch_resource_data(resource, mimetype),
-                    mimetype)
+            for mimetype in resource.allowed_mimetypes:
+                try:
+                    mimetype = mimetype[mimetype_key]
+                except KeyError:
+                    continue
+
+                if mimetype in self.FILTERED_MIMETYPES:
+                    # Resources have more specific mimetypes. We want to
+                    # filter out the general ones (like application/json)
+                    # so we don't show redundant examples.
+                    continue
+
+                if mimetype.endswith('xml'):
+                    # JSON is preferred. While we support XML, let's not
+                    # continue to advertise it.
+                    continue
+
+                url, headers, data = \
+                    self.fetch_resource_data(resource, mimetype)
+                example_node = build_example(headers, data, mimetype)
 
                 if example_node:
-                    example_section = nodes.section(ids=['example_' + mimetype])
+                    example_section = \
+                        nodes.section(ids=['example_' + mimetype],
+                                      classes=['examples', 'requests-example'])
                     examples_section += example_section
 
                     example_section += nodes.title(text=mimetype)
+
+                    accept_mimetype = mimetype
+
+                    if (mimetype.startswith('application/') and
+                        mimetype.endswith('+json')):
+                        # Instead of telling the user to ask for a specific
+                        # mimetype on the request, show them that asking for
+                        # application/json works fine.
+                        accept_mimetype = 'application/json'
+
+                    curl_text = ('$ curl http://reviews.example.com%s -A %s'
+                                 % (url, accept_mimetype))
+                    example_section += nodes.literal_block(
+                        curl_text, curl_text, classes=['cmdline'])
+
+                    example_section += nodes.literal_block(
+                        headers, headers, classes=['http-headers'])
                     example_section += example_node
                     has_examples = True
 
@@ -187,13 +242,13 @@ class ResourceDirective(Directive):
     def build_details_table(self, resource):
         is_list = 'is-list' in self.options
 
-        table = nodes.table()
+        table = nodes.table(classes=['resource-info'])
 
         tgroup = nodes.tgroup(cols=2)
         table += tgroup
 
-        tgroup += nodes.colspec(colwidth=30)
-        tgroup += nodes.colspec(colwidth=70)
+        tgroup += nodes.colspec(colwidth=30, classes=['field'])
+        tgroup += nodes.colspec(colwidth=70, classes=['value'])
 
         tbody = nodes.tbody()
         tgroup += tbody
@@ -212,10 +267,6 @@ class ResourceDirective(Directive):
 
         # URI Parameters
         #append_detail_row(tbody, "URI Parameters", '')
-
-        # Description
-        append_detail_row(tbody, "Description",
-                          parse_text(self, inspect.getdoc(resource)))
 
         # HTTP Methods
         allowed_http_methods = self.get_http_methods(resource, is_list)
@@ -238,7 +289,10 @@ class ResourceDirective(Directive):
                 doc_summary = doc_summary[:i + 1]
 
             paragraph += nodes.inline(text=" - ")
-            paragraph += parse_text(self, doc_summary, nodes.inline)
+            paragraph += parse_text(
+                self, doc_summary, nodes.inline,
+                where='HTTP %s handler summary for %s'
+                      % (http_method, self.options['classname']))
 
         append_detail_row(tbody, "HTTP Methods", bullet_list)
 
@@ -294,7 +348,7 @@ class ResourceDirective(Directive):
         append_detail_row(tbody, "Child Resources", tocnode)
 
         # Anonymous Access
-        if is_list:
+        if is_list and not resource.singleton:
             getter = resource.get_list
         else:
             getter = resource.get
@@ -339,14 +393,14 @@ class ResourceDirective(Directive):
                 print "Unknown type %s" % (field_type,)
                 assert False
 
-        table = nodes.table()
+        table = nodes.table(classes=['resource-fields'])
 
         tgroup = nodes.tgroup(cols=3)
         table += tgroup
 
-        tgroup += nodes.colspec(colwidth=25)
-        tgroup += nodes.colspec(colwidth=15)
-        tgroup += nodes.colspec(colwidth=60)
+        tgroup += nodes.colspec(colwidth=25, classes=['field'])
+        tgroup += nodes.colspec(colwidth=15, classes=['type'])
+        tgroup += nodes.colspec(colwidth=60, classes=['description'])
 
         thead = nodes.thead()
         tgroup += thead
@@ -374,7 +428,8 @@ class ResourceDirective(Directive):
                 append_row(tbody,
                            [name_node,
                             type_node,
-                            parse_text(self, info['description'])])
+                            parse_text(self, info['description'],
+                                       where='%s field description' % field)])
         else:
             for field in sorted(fields):
                 name = field
@@ -456,7 +511,9 @@ class ResourceDirective(Directive):
         http_method_func = self.get_http_method_func(resource, http_method)
 
         # Description text
-        returned_nodes = [parse_text(self, doc)]
+        returned_nodes = [
+            parse_text(self, doc, where='HTTP %s doc' % http_method)
+        ]
 
         # Request Parameters section
         required_fields = getattr(http_method_func, 'required_fields', [])
@@ -505,7 +562,10 @@ class ResourceDirective(Directive):
         request.path = create_fake_resource_path(request, resource, kwargs,
                                                  'is-list' not in self.options)
 
-        return fetch_response_data(resource, mimetype, request, **kwargs)
+        headers, data = fetch_response_data(resource, mimetype, request,
+                                            **kwargs)
+
+        return request.path, headers, data
 
     def get_resource_class(self, classname):
         try:
@@ -514,7 +574,8 @@ class ResourceDirective(Directive):
             raise ResourceNotFound(self, classname)
 
     def get_http_method_func(self, resource, http_method):
-        if http_method == 'GET' and 'is-list' in self.options:
+        if (http_method == 'GET' and 'is-list' in self.options and
+            not resource.singleton):
             method_name = 'get_list'
         else:
             method_name = resource.method_mapping[http_method]
@@ -543,10 +604,45 @@ class ResourceDirective(Directive):
             set(resource.allowed_methods).intersection(possible_http_methods))
 
 
+class ResourceTreeDirective(Directive):
+    has_content = True
+
+    def run(self):
+        bullet_list = nodes.bullet_list()
+        self._output_resource(resources.root, bullet_list, True)
+
+        return [bullet_list]
+
+    def _output_resource(self, resource, parent, is_list):
+        item = nodes.list_item()
+        parent += item
+
+        paragraph = nodes.paragraph()
+        item += paragraph
+
+        paragraph += parse_text(
+            self,
+            ':ref:`%s <%s>`' %
+            (get_resource_title(resource, is_list, False),
+             'webapi2.0-%s-resource' % get_resource_docname(resource, is_list)))
+
+        bullet_list = nodes.bullet_list()
+        item += bullet_list
+
+        if is_list:
+            if resource.uri_object_key:
+                self._output_resource(resource, bullet_list, False)
+
+            for child in resource.list_child_resources:
+                self._output_resource(child, bullet_list, True)
+        else:
+            for child in resource.item_child_resources:
+                self._output_resource(child, bullet_list, True)
+
+
 class ErrorDirective(Directive):
     has_content = True
     final_argument_whitespace = True
-    has_content = True
     option_spec = {
         'instance': directives.unchanged_required,
         'example-data': directives.unchanged,
@@ -591,11 +687,11 @@ class ErrorDirective(Directive):
         has_examples = False
 
         for mimetype in self.MIMETYPES:
-            example_node = build_example(
+            headers, data = \
                 fetch_response_data(WebAPIResponseError, mimetype,
                                     err=error_obj,
-                                    extra_params=extra_params),
-                mimetype)
+                                    extra_params=extra_params)
+            example_node = build_example(headers, data, mimetype)
 
             if example_node:
                 example_section = nodes.section(ids=['example_' + mimetype])
@@ -635,13 +731,16 @@ class ErrorDirective(Directive):
                           nodes.literal(text=error_obj.msg))
 
         if error_obj.headers:
+            if callable(error_obj.headers):
+                headers = error_obj.headers(DummyRequest())
+
             # HTTP Headers
-            if len(error_obj.headers) == 1:
-                content = nodes.literal(text=error_obj.headers.keys()[0])
+            if len(headers) == 1:
+                content = nodes.literal(text=headers.keys()[0])
             else:
                 content = nodes.bullet_list()
 
-                for header in error_obj.headers.iterkeys():
+                for header in headers.iterkeys():
                     item = nodes.list_item()
                     content += item
 
@@ -650,10 +749,11 @@ class ErrorDirective(Directive):
 
             append_detail_row(tbody, 'HTTP Headers', content)
 
-
         # Description
-        append_detail_row(tbody, 'Description',
-                          parse_text(self, '\n'.join(self.content)))
+        append_detail_row(
+            tbody, 'Description',
+            parse_text(self, '\n'.join(self.content),
+                       where='API error %s description' % error_obj.code))
 
         return table
 
@@ -673,8 +773,11 @@ class ErrorDirective(Directive):
             raise ErrorNotFound(self, name)
 
 
-def parse_text(directive, text, node_type=nodes.paragraph):
+def parse_text(directive, text, node_type=nodes.paragraph,
+               where=None):
     """Parses text in ReST format and returns a node with the content."""
+    assert text is not None, 'Missing text during parse_text in %s' % where
+
     vl = ViewList()
 
     for line in text.split('\n'):
@@ -736,16 +839,21 @@ def uncamelcase(name, separator='_'):
     return ALL_CAP_RE.sub(r'\1%s\2' % separator, s1).lower()
 
 
-def get_resource_title(resource, is_list):
+def get_resource_title(resource, is_list, append_resource=True):
     """Returns a human-readable name for the resource."""
     class_name = resource.__class__.__name__
     class_name = class_name.replace('Resource', '')
     normalized_title = title(uncamelcase(class_name, ' '))
 
     if is_list:
-        return '%s List Resource' % normalized_title
+        s = '%s List' % normalized_title
     else:
-        return '%s Resource' % normalized_title
+        s = normalized_title
+
+    if append_resource:
+        s += ' Resource'
+
+    return s
 
 def get_resource_docname(resource, is_list):
     """Returns the name of the page used for a resource's documentation."""
@@ -767,7 +875,7 @@ def get_ref_to_doc(refname):
     """Returns a node that links to a document with the given ref name."""
     ref = addnodes.pending_xref(reftype='ref', reftarget=refname,
                                 refexplicit=False, refdomain='std')
-    ref += nodes.literal(refname, refname, classes=['xref'])
+    ref += nodes.literal('hello', 'hello', classes=['xref'])
     return ref
 
 
@@ -822,7 +930,14 @@ def create_fake_resource_path(request, resource, child_keys, include_child):
             resource.model and
             resource.uri_object_key):
                 q = resource.get_queryset(request, **child_keys)
-                assert q.count() > 0
+
+                if q.count() == 0:
+                    logging.critical('Resource "%s" requires objects in the '
+                                     'database', resource.__class__)
+
+                    # Do the assert so it shows up in the logs.
+                    assert q.count() > 0
+
                 obj = q[0]
                 value = getattr(obj, resource.model_object_key)
                 child_keys[resource.uri_object_key] = value
@@ -831,18 +946,24 @@ def create_fake_resource_path(request, resource, child_keys, include_child):
     return path
 
 
-def build_example(data, mimetype):
+def build_example(headers, data, mimetype):
     if not data:
         return None
 
-    language = MIMETYPE_LANGUAGE_MAPPING.get(mimetype, None)
+    language = None
+
+    for base_mimetype, lang in MIMETYPE_LANGUAGES:
+        if is_mimetype_a(mimetype, base_mimetype):
+            language = lang
+            break
 
     if language == 'javascript':
         code = json.dumps(json.loads(data), sort_keys=True, indent=2)
     else:
         code = data
 
-    return nodes.literal_block(code, code, language=language)
+    return nodes.literal_block(code, code, language=language,
+                               classes=['example-payload'])
 
 
 def fetch_response_data(response_class, mimetype, request=None, **kwargs):
@@ -852,12 +973,12 @@ def fetch_response_data(response_class, mimetype, request=None, **kwargs):
     request.META['HTTP_ACCEPT'] = mimetype
 
     result = unicode(response_class(request, **kwargs))
-    headers, data = result.split('\n\n', 1)
-    return data
+    return result.split('\r\n\r\n', 1)
 
 
 def setup(app):
     app.add_directive('webapi-resource', ResourceDirective)
+    app.add_directive('webapi-resource-tree', ResourceTreeDirective)
     app.add_directive('webapi-error', ErrorDirective)
     app.add_crossref_type('webapi2.0', 'webapi2.0', 'single: %s',
                           nodes.emphasis)

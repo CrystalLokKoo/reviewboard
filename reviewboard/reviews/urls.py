@@ -1,6 +1,15 @@
-from django.conf.urls.defaults import patterns, url
+from __future__ import unicode_literals
 
-urlpatterns = patterns('reviewboard.reviews.views',
+from django.conf.urls import patterns, url
+
+from reviewboard.reviews.views import (ReviewsDiffFragmentView,
+                                       ReviewsDiffViewerView,
+                                       ReviewsSearchView)
+
+
+urlpatterns = patterns(
+    'reviewboard.reviews.views',
+
     url(r'^$', 'all_review_requests', name="all-review-requests"),
 
     # Review request creation
@@ -10,14 +19,12 @@ urlpatterns = patterns('reviewboard.reviews.views',
     url(r'^(?P<review_request_id>[0-9]+)/$', 'review_detail',
         name="review-request-detail"),
 
-    # Reviews
-    (r'^(?P<review_request_id>[0-9]+)/reviews/draft/inline-form/$',
-     'review_draft_inline_form',
-     {'template_name': 'reviews/review_draft_inline_form.html'}),
-
     # Review request diffs
-    url(r'^(?P<review_request_id>[0-9]+)/diff/$', 'diff', name="view_diff"),
-    url(r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)/$', 'diff',
+    url(r'^(?P<review_request_id>[0-9]+)/diff/$',
+        ReviewsDiffViewerView.as_view(),
+        name="view_diff"),
+    url(r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)/$',
+        ReviewsDiffViewerView.as_view(),
         name="view_diff_revision"),
 
     url(r'^(?P<review_request_id>[0-9]+)/diff/raw/$', 'raw_diff',
@@ -26,9 +33,9 @@ urlpatterns = patterns('reviewboard.reviews.views',
      'raw_diff'),
 
     (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)/fragment/(?P<filediff_id>[0-9]+)/$',
-     'diff_fragment'),
+     ReviewsDiffFragmentView.as_view()),
     (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)/fragment/(?P<filediff_id>[0-9]+)/chunk/(?P<chunkindex>[0-9]+)/$',
-     'diff_fragment'),
+     ReviewsDiffFragmentView.as_view()),
 
     # Fragments
     (r'^(?P<review_request_id>[0-9]+)/fragments/diff-comments/(?P<comment_ids>[0-9,]+)/$',
@@ -36,11 +43,12 @@ urlpatterns = patterns('reviewboard.reviews.views',
 
     # Review request interdiffs
     url(r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/$',
-        'diff', name="view-interdiff"),
+        ReviewsDiffViewerView.as_view(),
+        name="view_interdiff"),
     (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/fragment/(?P<filediff_id>[0-9]+)/$',
-     'diff_fragment'),
+     ReviewsDiffFragmentView.as_view()),
     (r'^(?P<review_request_id>[0-9]+)/diff/(?P<revision>[0-9]+)-(?P<interdiff_revision>[0-9]+)/fragment/(?P<filediff_id>[0-9]+)/chunk/(?P<chunkindex>[0-9]+)/$',
-     'diff_fragment'),
+     ReviewsDiffFragmentView.as_view()),
 
     # File attachments
     url(r'^(?P<review_request_id>[0-9]+)/file/(?P<file_attachment_id>[0-9]+)/$',
@@ -63,6 +71,5 @@ urlpatterns = patterns('reviewboard.reviews.views',
      'preview_reply_email'),
 
     # Search
-    url(r'^search/$', 'search', name="search"),
+    url(r'^search/$', ReviewsSearchView.as_view(), name="search"),
 )
-

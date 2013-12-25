@@ -27,7 +27,7 @@ this checkbox checked will be filed as an open issue.
 .. image:: comment-box.png
 
 This checkbox is available when :ref:`reviewing diffs <reviewing-diffs>`,
-:ref:`screenshots <reviewing-screenshots>`, and
+:ref:`images <reviewing-images>`, and other kinds of
 :ref:`file attachments <reviewing-file-attachments>`.
 
 By default, :guilabel:`Open an issue` is checked for new comments.
@@ -58,6 +58,21 @@ should be followed up with a comment.
 
 Issues that are unintentionally closed one way or another can be re-opened
 by clicking :guilabel:`Re-open`.
+
+
+Summary Table
+=============
+
+On the reviews page below the description is a table which lists all of the
+issues found in reviews.
+
+.. image:: issue-summary.png
+
+Clicking the :guilabel:`Status` drop-down will allow you to choose between
+:guilabel:`Open`, :guilabel:`Dropped`, :guilabel:`Resolved`, or
+:guilabel:`All issues`. Clicking the :guilabel:`From` drop-down will allow
+you to filter the list by individual reviewers. Clicking on a row will jump
+to the comment.
 
 
 .. comment: vim: ft=rst et ts=3

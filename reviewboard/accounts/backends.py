@@ -1,29 +1,32 @@
+from __future__ import unicode_literals
+
 import logging
 import pkg_resources
 import re
 import sre_constants
 import sys
-import time
 from warnings import warn
-
-try:
-    from hashlib import sha1
-except ImportError:
-    from sha import sha as sha1
 
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import User
 from django.contrib.auth import get_backends
 from django.contrib.auth import hashers
-from django.utils.translation import ugettext as _
-from djblets.util.misc import get_object_or_none
+from django.utils import six
+from django.utils.translation import ugettext_lazy as _
+from djblets.db.query import get_object_or_none
+try:
+    from ldap.filter import filter_format
+except ImportError:
+    pass
 
-from reviewboard.accounts.forms import ActiveDirectorySettingsForm, \
-                                       LDAPSettingsForm, \
-                                       NISSettingsForm, \
-                                       StandardAuthSettingsForm, \
-                                       X509SettingsForm
+from reviewboard.accounts.forms import (ActiveDirectorySettingsForm,
+                                        LDAPSettingsForm,
+                                        NISSettingsForm,
+                                        StandardAuthSettingsForm,
+                                        X509SettingsForm)
+from reviewboard.accounts.models import LocalSiteProfile
+from reviewboard.site.models import LocalSite
 
 
 _auth_backends = []
@@ -40,12 +43,12 @@ class AuthBackend(object):
     supports_change_name = False
     supports_change_email = False
     supports_change_password = False
-    supports_change_timezone = False
+    login_instructions = None
 
     def authenticate(self, username, password):
         raise NotImplementedError
 
-    def get_or_create_user(self, username):
+    def get_or_create_user(self, username, request):
         raise NotImplementedError
 
     def get_user(self, user_id):
@@ -90,43 +93,138 @@ class AuthBackend(object):
         """
         pass
 
-    def update_timezone(self, user):
-        """Updates the user's timezone on the backend.
-
-        The timezone will already be stored in the provided
-        ``user`` object.
-
-        Authentication backends can override this to update the timezone
-        on the backend based on the values in ``user``. This will only
-        be called if :py:attr:`supports_change_timezone` is ``True``.
-
-        By default, this will do nothing.
-        """
-        pass
-
 
 class StandardAuthBackend(AuthBackend, ModelBackend):
+    """Authenticates users against the local database.
+
+    This will authenticate a user against their entry in the database, if
+    the user has a local password stored. This is the default form of
+    authentication in Review Board.
+
+    This backend also handles permission checking for users on LocalSites.
+    In Django, this is the responsibility of at least one auth backend in
+    the list of configured backends.
+
+    Regardless of the specific type of authentication chosen for the
+    installation, StandardAuthBackend will always be provided in the list
+    of configured backends. Because of this, it will always be able to
+    handle authentication against locally added users and handle
+    LocalSite-based permissions for all configurations.
+    """
     name = _('Standard Registration')
     settings_form = StandardAuthSettingsForm
     supports_registration = True
     supports_change_name = True
     supports_change_email = True
     supports_change_password = True
-    supports_change_timezone = True
 
     def authenticate(self, username, password):
         return ModelBackend.authenticate(self, username, password)
 
-    def get_or_create_user(self, username):
-        return ModelBackend.get_or_create_user(self, username)
+    def get_or_create_user(self, username, request):
+        return ModelBackend.get_or_create_user(self, username, request)
 
     def update_password(self, user, password):
         user.password = hashers.make_password(password)
+
+    def get_all_permissions(self, user, obj=None):
+        """Returns a list of all permissions for a user.
+
+        If a LocalSite instance is passed as ``obj``, then the permissions
+        returned will be those that the user has on that LocalSite. Otherwise,
+        they will be their global permissions.
+
+        It is not legal to pass any other object.
+        """
+        if obj is not None and not isinstance(obj, LocalSite):
+            logging.error('Unexpected object %r passed to '
+                          'StandardAuthBackend.get_all_permissions. '
+                          'Returning an empty list.' % obj)
+
+            if settings.DEBUG:
+                raise ValueError('Unexpected object %r' % obj)
+
+            return set()
+
+        if user.is_anonymous():
+            return set()
+
+        # First, get the list of all global permissions.
+        #
+        # Django's ModelBackend doesn't support passing an object, and will
+        # return an empty set, so don't pass an object for this attempt.
+        permissions = \
+            super(StandardAuthBackend, self).get_all_permissions(user)
+
+        if obj is not None:
+            # We know now that this is a LocalSite, due to the assertion
+            # above.
+            if not hasattr(user, '_local_site_perm_cache'):
+                user._local_site_perm_cache = {}
+
+            if obj.pk not in user._local_site_perm_cache:
+                perm_cache = set()
+
+                try:
+                    site_profile = user.get_site_profile(obj)
+                    site_perms = site_profile.permissions or {}
+
+                    if site_perms:
+                        perm_cache = set([
+                            key
+                            for key, value in six.iteritems(site_perms)
+                            if value
+                        ])
+                except LocalSiteProfile.DoesNotExist:
+                    pass
+
+                user._local_site_perm_cache[obj.pk] = perm_cache
+
+            permissions = permissions.copy()
+            permissions.update(user._local_site_perm_cache[obj.pk])
+
+        return permissions
+
+    def has_perm(self, user, perm, obj=None):
+        """Returns whether a user has the given permission.
+
+        If a LocalSite instance is passed as ``obj``, then the permissions
+        checked will be those that the user has on that LocalSite. Otherwise,
+        they will be their global permissions.
+
+        It is not legal to pass any other object.
+        """
+        if obj is not None and not isinstance(obj, LocalSite):
+            logging.error('Unexpected object %r passed to has_perm. '
+                          'Returning False.' % obj)
+
+            if settings.DEBUG:
+                raise ValueError('Unexpected object %r' % obj)
+
+            return False
+
+        if not user.is_active:
+            return False
+
+        if obj is not None:
+            if not hasattr(user, '_local_site_admin_for'):
+                user._local_site_admin_for = {}
+
+            if obj.pk not in user._local_site_admin_for:
+                user._local_site_admin_for[obj.pk] = obj.is_mutable_by(user)
+
+            if user._local_site_admin_for[obj.pk]:
+                return True
+
+        return super(StandardAuthBackend, self).has_perm(user, perm, obj)
+
 
 class NISBackend(AuthBackend):
     """Authenticate against a user on an NIS server."""
     name = _('NIS')
     settings_form = NISSettingsForm
+    login_instructions = \
+        _('Use your standard NIS username and password.')
 
     def authenticate(self, username, password):
         import crypt
@@ -140,15 +238,16 @@ class NISBackend(AuthBackend):
             new_crypted = crypt.crypt(password, original_crypted)
 
             if original_crypted == new_crypted:
-                return self.get_or_create_user(username, passwd)
+                return self.get_or_create_user(username, None, passwd)
         except nis.error:
-            # FIXME I'm not sure under what situations this would fail (maybe if
-            # their NIS server is down), but it'd be nice to inform the user.
+            # FIXME I'm not sure under what situations this would fail (maybe
+            # if their NIS server is down), but it'd be nice to inform the
+            # user.
             pass
 
         return None
 
-    def get_or_create_user(self, username, passwd=None):
+    def get_or_create_user(self, username, request, passwd=None):
         import nis
 
         username = username.strip()
@@ -164,9 +263,9 @@ class NISBackend(AuthBackend):
                 first_name = names[0]
                 last_name = None
                 if len(names) > 1:
-                  last_name = names[1]
+                    last_name = names[1]
 
-                email = u'%s@%s' % (username, settings.NIS_EMAIL_DOMAIN)
+                email = '%s@%s' % (username, settings.NIS_EMAIL_DOMAIN)
 
                 user = User(username=username,
                             password='',
@@ -186,6 +285,8 @@ class LDAPBackend(AuthBackend):
     """Authenticate against a user on an LDAP server."""
     name = _('LDAP')
     settings_form = LDAPSettingsForm
+    login_instructions = \
+        _('Use your standard LDAP username and password.')
 
     def authenticate(self, username, password):
         username = username.strip()
@@ -211,34 +312,43 @@ class LDAPBackend(AuthBackend):
                 # Log in as the anonymous user before searching.
                 ldapo.simple_bind_s(settings.LDAP_ANON_BIND_UID,
                                     settings.LDAP_ANON_BIND_PASSWD)
-                search = ldapo.search_s(settings.LDAP_BASE_DN, ldap.SCOPE_SUBTREE,
+                search = ldapo.search_s(settings.LDAP_BASE_DN,
+                                        ldap.SCOPE_SUBTREE,
                                         uid)
                 if not search:
                     # No such a user, return early, no need for bind attempts
-                    logging.warning("LDAP error: The specified object does not "
-                                    "exist in the Directory: %s" %
-                                    uid)
+                    logging.warning("LDAP error: The specified object does "
+                                    "not exist in the Directory: %s" % uid)
                     return None
                 else:
-                    # Having found the user anonymously, attempt bind with the password
+                    # Having found the user anonymously, attempt bind with the
+                    # password
                     ldapo.bind_s(search[0][0], password)
 
             else :
-                # Attempt to bind using the given uid and password. It may be
-                # that we really need a setting for how the DN in this is
-                # constructed; this way is correct for my system
-                userbinding=','.join([uid,settings.LDAP_BASE_DN])
+                # Bind anonymously to the server, then search for the user with
+                # the given base DN and uid. If the user is found, a fully
+                # qualified DN is returned. Authentication is then done with
+                # bind using this fully qualified DN.
+                ldapo.simple_bind_s()
+                search = ldapo.search_s(settings.LDAP_BASE_DN,
+                                        ldap.SCOPE_SUBTREE,
+                                        uid)
+                if (len(search) > 0):
+                    userbinding = search[0][0]
+                else:
+                    userbinding = ','.join([uid,settings.LDAP_BASE_DN])
                 ldapo.bind_s(userbinding, password)
 
-            return self.get_or_create_user(username, ldapo)
+            return self.get_or_create_user(username, None, ldapo)
 
         except ImportError:
             pass
         except ldap.INVALID_CREDENTIALS:
-            logging.warning("LDAP error: The specified object does not "
-                            "exist in the Directory or provided invalid credentials: %s" %
-                            uid)
-        except ldap.LDAPError, e:
+            logging.warning("LDAP error: The specified object does not exist "
+                            "in the Directory or provided invalid "
+                            "credentials: %s" % uid)
+        except ldap.LDAPError as e:
             logging.warning("LDAP error: %s" % e)
         except:
             # Fallback exception catch because
@@ -249,7 +359,7 @@ class LDAPBackend(AuthBackend):
 
         return None
 
-    def get_or_create_user(self, username, ldapo):
+    def get_or_create_user(self, username, request, ldapo):
         username = username.strip()
 
         try:
@@ -258,16 +368,18 @@ class LDAPBackend(AuthBackend):
         except User.DoesNotExist:
             try:
                 import ldap
-                search_result = ldapo.search_s(settings.LDAP_BASE_DN,
-                                               ldap.SCOPE_SUBTREE,
-                                               "(%s)" % settings.LDAP_UID_MASK % username)
+                search_result = ldapo.search_s(
+                    settings.LDAP_BASE_DN,
+                    ldap.SCOPE_SUBTREE,
+                    "(%s)" % settings.LDAP_UID_MASK % username)
                 user_info = search_result[0][1]
 
-                given_name_attr = getattr(settings, 'LDAP_GIVEN_NAME_ATTRIBUTE',
-                                          'givenName')
+                given_name_attr = getattr(
+                    settings, 'LDAP_GIVEN_NAME_ATTRIBUTE', 'givenName')
                 first_name = user_info.get(given_name_attr, [username])[0]
 
-                surname_attr = getattr(settings, 'LDAP_SURNAME_ATTRIBUTE', 'sn')
+                surname_attr = getattr(
+                    settings, 'LDAP_SURNAME_ATTRIBUTE', 'sn')
                 last_name = user_info.get(surname_attr, [''])[0]
 
                 # If a single ldap attribute is used to hold the full name of
@@ -283,7 +395,7 @@ class LDAPBackend(AuthBackend):
                     pass
 
                 if settings.LDAP_EMAIL_DOMAIN:
-                    email = u'%s@%s' % (username, settings.LDAP_EMAIL_DOMAIN)
+                    email = '%s@%s' % (username, settings.LDAP_EMAIL_DOMAIN)
                 elif settings.LDAP_EMAIL_ATTRIBUTE:
                     email = user_info[settings.LDAP_EMAIL_ATTRIBUTE][0]
                 else:
@@ -308,12 +420,12 @@ class LDAPBackend(AuthBackend):
                 # ANON_BIND_UID and ANON_BIND_PASSWD are wrong, but I don't
                 # know how
                 pass
-            except ldap.NO_SUCH_OBJECT, e:
+            except ldap.NO_SUCH_OBJECT as e:
                 logging.warning("LDAP error: %s settings.LDAP_BASE_DN: %s "
                                 "settings.LDAP_UID_MASK: %s" %
                                 (e, settings.LDAP_BASE_DN,
                                  settings.LDAP_UID_MASK % username))
-            except ldap.LDAPError, e:
+            except ldap.LDAPError as e:
                 logging.warning("LDAP error: %s" % e)
 
         return None
@@ -323,36 +435,43 @@ class ActiveDirectoryBackend(AuthBackend):
     """Authenticate a user against an Active Directory server."""
     name = _('Active Directory')
     settings_form = ActiveDirectorySettingsForm
+    login_instructions = \
+        _('Use your standard Active Directory username and password.')
 
     def get_domain_name(self):
-        return str(settings.AD_DOMAIN_NAME)
+        return six.text_type(settings.AD_DOMAIN_NAME)
 
-    def get_ldap_search_root(self):
+    def get_ldap_search_root(self, userdomain=None):
         if getattr(settings, "AD_SEARCH_ROOT", None):
             root = [settings.AD_SEARCH_ROOT]
         else:
-            root = ['dc=%s' % x for x in self.get_domain_name().split('.')]
+            if userdomain is None:
+                userdomain = self.get_domain_name()
+
+            root = ['dc=%s' % x for x in userdomain.split('.')]
+
             if settings.AD_OU_NAME:
                 root = ['ou=%s' % settings.AD_OU_NAME] + root
 
         return ','.join(root)
 
-    def search_ad(self, con, filterstr):
+    def search_ad(self, con, filterstr, userdomain=None):
         import ldap
-        search_root = self.get_ldap_search_root()
+        search_root = self.get_ldap_search_root(userdomain)
         logging.debug('Search root ' + search_root)
-        return con.search_s(search_root, scope=ldap.SCOPE_SUBTREE, filterstr=filterstr)
+        return con.search_s(search_root, scope=ldap.SCOPE_SUBTREE,
+                            filterstr=filterstr)
 
-    def find_domain_controllers_from_dns(self):
+    def find_domain_controllers_from_dns(self, userdomain=None):
         import DNS
         DNS.Base.DiscoverNameServers()
-        q = '_ldap._tcp.%s' % self.get_domain_name()
-        req = DNS.Base.DnsRequest(q, qtype = 'SRV').req()
+        q = '_ldap._tcp.%s' % (userdomain or self.get_domain_name())
+        req = DNS.Base.DnsRequest(q, qtype='SRV').req()
         return [x['data'][-2:] for x in req.answers]
 
     def can_recurse(self, depth):
         return (settings.AD_RECURSION_DEPTH == -1 or
-                        depth <= settings.AD_RECURSION_DEPTH)
+                depth <= settings.AD_RECURSION_DEPTH)
 
     def get_member_of(self, con, search_results, seen=None, depth=0):
         depth += 1
@@ -378,7 +497,9 @@ class ActiveDirectoryBackend(AuthBackend):
                     # correct when the values differ (e.g. if a
                     # "pre-Windows 2000" group name is set in AD)
                     group_data = self.search_ad(
-                        con, '(&(objectClass=group)(cn=%s))' % group)
+                        con,
+                        filter_format('(&(objectClass=group)(cn=%s))',
+                                      (group,)))
                     seen.update(self.get_member_of(con, group_data,
                                                    seen=seen, depth=depth))
             else:
@@ -387,12 +508,21 @@ class ActiveDirectoryBackend(AuthBackend):
 
         return seen
 
-    def get_ldap_connections(self):
+    def get_ldap_connections(self, userdomain=None):
         import ldap
         if settings.AD_FIND_DC_FROM_DNS:
-            dcs = self.find_domain_controllers_from_dns()
+            dcs = self.find_domain_controllers_from_dns(userdomain)
         else:
-            dcs = [('389', settings.AD_DOMAIN_CONTROLLER)]
+            dcs = []
+
+            for dc_entry in settings.AD_DOMAIN_CONTROLLER.split():
+                if ':' in dc_entry:
+                    host, port = dc_entry.split(':')
+                else:
+                    host = dc_entry
+                    port = '389'
+
+                dcs.append([port, host])
 
         for dc in dcs:
             port, host = dc
@@ -405,17 +535,34 @@ class ActiveDirectoryBackend(AuthBackend):
     def authenticate(self, username, password):
         import ldap
 
-        connections = self.get_ldap_connections()
         username = username.strip()
+
+        user_subdomain = ''
+
+        if '@' in username:
+            username, user_subdomain = username.split('@', 1)
+        elif '\\' in username:
+            user_subdomain, username = username.split('\\', 1)
+
+        userdomain = self.get_domain_name()
+
+        if user_subdomain:
+            userdomain = "%s.%s" % (user_subdomain, userdomain)
+
+        connections = self.get_ldap_connections(userdomain)
         required_group = settings.AD_GROUP_NAME
 
         for con in connections:
             try:
-                bind_username ='%s@%s' % (username, self.get_domain_name())
+                bind_username = '%s@%s' % (username, userdomain)
+                logging.debug("User %s is trying to log in "
+                              "via AD" % bind_username)
                 con.simple_bind_s(bind_username, password)
                 user_data = self.search_ad(
                     con,
-                    '(&(objectClass=user)(sAMAccountName=%s))' % username)
+                    filter_format('(&(objectClass=user)(sAMAccountName=%s))',
+                                  (username,)),
+                    userdomain)
 
                 if not user_data:
                     return None
@@ -423,27 +570,32 @@ class ActiveDirectoryBackend(AuthBackend):
                 if required_group:
                     try:
                         group_names = self.get_member_of(con, user_data)
-                    except Exception, e:
+                    except Exception as e:
                         logging.error("Active Directory error: failed getting"
-                                      "groups for user '%s': %s" % (username, e))
+                                      "groups for user '%s': %s" %
+                                      (username, e))
                         return None
 
                     if required_group not in group_names:
-                        logging.warning("Active Directory: User %s is not in required group %s" % (username, required_group))
+                        logging.warning("Active Directory: User %s is not in "
+                                        "required group %s" %
+                                        (username, required_group))
                         return None
 
-                return self.get_or_create_user(username, user_data)
+                return self.get_or_create_user(username, None, user_data)
             except ldap.SERVER_DOWN:
                 logging.warning('Active Directory: Domain controller is down')
                 continue
             except ldap.INVALID_CREDENTIALS:
-                logging.warning('Active Directory: Failed login for user %s' % username)
+                logging.warning('Active Directory: Failed login for user %s' %
+                                username)
                 return None
 
-        logging.error('Active Directory error: Could not contact any domain controller servers')
+        logging.error('Active Directory error: Could not contact any domain '
+                      'controller servers')
         return None
 
-    def get_or_create_user(self, username, ad_user_data):
+    def get_or_create_user(self, username, request, ad_user_data):
         username = username.strip()
 
         try:
@@ -455,8 +607,9 @@ class ActiveDirectoryBackend(AuthBackend):
 
                 first_name = user_info.get('givenName', [username])[0]
                 last_name = user_info.get('sn', [""])[0]
-                email = user_info.get('mail',
-                    [u'%s@%s' % (username, settings.AD_DOMAIN_NAME)])[0]
+                email = user_info.get(
+                    'mail',
+                    ['%s@%s' % (username, settings.AD_DOMAIN_NAME)])[0]
 
                 user = User(username=username,
                             password='',
@@ -484,7 +637,7 @@ class X509Backend(AuthBackend):
 
     def authenticate(self, x509_field=""):
         username = self.clean_username(x509_field)
-        return self.get_or_create_user(username)
+        return self.get_or_create_user(username, None)
 
     def clean_username(self, username):
         username = username.strip()
@@ -497,12 +650,12 @@ class X509Backend(AuthBackend):
                 else:
                     logging.warning("X509Backend: username '%s' didn't match "
                                     "regex." % username)
-            except sre_constants.error, e:
+            except sre_constants.error as e:
                 logging.error("X509Backend: Invalid regex specified: %s" % e)
 
         return username
 
-    def get_or_create_user(self, username):
+    def get_or_create_user(self, username, request):
         user = None
         username = username.strip()
 
@@ -535,7 +688,7 @@ def get_registered_auth_backends():
     for entry in pkg_resources.iter_entry_points('reviewboard.auth_backends'):
         try:
             yield entry.name, entry.load()
-        except Exception, e:
+        except Exception as e:
             logging.error('Error loading authentication backend %s: %s'
                           % (entry.name, e),
                           exc_info=1)
@@ -551,7 +704,7 @@ def get_auth_backends():
     global _auth_backend_setting
 
     if (not _auth_backends or
-        _auth_backend_setting != settings.AUTHENTICATION_BACKENDS):
+            _auth_backend_setting != settings.AUTHENTICATION_BACKENDS):
         _auth_backends = []
         for backend in get_backends():
             if not isinstance(backend, AuthBackend):

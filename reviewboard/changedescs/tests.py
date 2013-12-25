@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.test import TestCase
 
 from reviewboard.changedescs.models import ChangeDescription
@@ -13,13 +15,15 @@ class ChangeDescTests(TestCase):
         changedesc = ChangeDescription()
         changedesc.record_field_change("test", old_value, new_value)
 
-        self.assert_("test" in changedesc.fields_changed)
-        self.assert_("old" in changedesc.fields_changed["test"])
-        self.assert_("new" in changedesc.fields_changed["test"])
-        self.assert_("added" not in changedesc.fields_changed["test"])
-        self.assert_("removed" not in changedesc.fields_changed["test"])
-        self.assertEqual(changedesc.fields_changed["test"]["old"], (old_value,))
-        self.assertEqual(changedesc.fields_changed["test"]["new"], (new_value,))
+        self.assertTrue("test" in changedesc.fields_changed)
+        self.assertTrue("old" in changedesc.fields_changed["test"])
+        self.assertTrue("new" in changedesc.fields_changed["test"])
+        self.assertTrue("added" not in changedesc.fields_changed["test"])
+        self.assertTrue("removed" not in changedesc.fields_changed["test"])
+        self.assertEqual(changedesc.fields_changed["test"]["old"],
+                         (old_value,))
+        self.assertEqual(changedesc.fields_changed["test"]["new"],
+                         (new_value,))
 
     def testRecordList(self):
         """Testing record_field_change with a list value"""
@@ -29,11 +33,11 @@ class ChangeDescTests(TestCase):
         changedesc = ChangeDescription()
         changedesc.record_field_change("test", old_value, new_value)
 
-        self.assert_("test" in changedesc.fields_changed)
-        self.assert_("old" in changedesc.fields_changed["test"])
-        self.assert_("new" in changedesc.fields_changed["test"])
-        self.assert_("added" in changedesc.fields_changed["test"])
-        self.assert_("removed" in changedesc.fields_changed["test"])
+        self.assertTrue("test" in changedesc.fields_changed)
+        self.assertTrue("old" in changedesc.fields_changed["test"])
+        self.assertTrue("new" in changedesc.fields_changed["test"])
+        self.assertTrue("added" in changedesc.fields_changed["test"])
+        self.assertTrue("removed" in changedesc.fields_changed["test"])
         self.assertEqual(changedesc.fields_changed["test"]["old"],
                          [(i,) for i in old_value])
         self.assertEqual(changedesc.fields_changed["test"]["new"],
@@ -58,11 +62,11 @@ class ChangeDescTests(TestCase):
         changedesc = ChangeDescription()
         changedesc.record_field_change("test", old_value, new_value, "text")
 
-        self.assert_("test" in changedesc.fields_changed)
-        self.assert_("old" in changedesc.fields_changed["test"])
-        self.assert_("new" in changedesc.fields_changed["test"])
-        self.assert_("added" in changedesc.fields_changed["test"])
-        self.assert_("removed" in changedesc.fields_changed["test"])
+        self.assertTrue("test" in changedesc.fields_changed)
+        self.assertTrue("old" in changedesc.fields_changed["test"])
+        self.assertTrue("new" in changedesc.fields_changed["test"])
+        self.assertTrue("added" in changedesc.fields_changed["test"])
+        self.assertTrue("removed" in changedesc.fields_changed["test"])
         self.assertEqual(set(changedesc.fields_changed["test"]["old"]),
                          set([(obj.text, obj.get_absolute_url(), obj.id)
                              for obj in old_value]))

@@ -23,11 +23,15 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+from __future__ import unicode_literals
+
 from django.contrib.auth.models import User
 from django.db import models
+from django.utils.encoding import python_2_unicode_compatible
 from django.utils.translation import ugettext_lazy as _
 
 
+@python_2_unicode_compatible
 class LocalSite(models.Model):
     """
     A division within a Review Board installation.
@@ -46,7 +50,7 @@ class LocalSite(models.Model):
     users = models.ManyToManyField(User, blank=True,
                                    related_name='local_site')
     admins = models.ManyToManyField(User, blank=True,
-                                   related_name='local_site_admins')
+                                    related_name='local_site_admins')
 
     def is_accessible_by(self, user):
         """Returns whether or not the user has access to this LocalSite.
@@ -69,5 +73,5 @@ class LocalSite(models.Model):
         """
         return user.has_perm(perm) or self.admins.filter(pk=user.pk).exists()
 
-    def __unicode__(self):
+    def __str__(self):
         return self.name

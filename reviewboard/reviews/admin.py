@@ -1,12 +1,15 @@
+from __future__ import unicode_literals
+
 from django.contrib import admin
 from django.template.defaultfilters import truncatechars
 from django.utils.translation import ugettext_lazy as _
 
 from reviewboard.reviews.forms import DefaultReviewerForm, GroupForm
-from reviewboard.reviews.models import Comment, DefaultReviewer, Group, \
-                                       Review, ReviewRequest, \
-                                       ReviewRequestDraft, Screenshot, \
-                                       ScreenshotComment, FileAttachmentComment
+from reviewboard.reviews.models import (Comment, DefaultReviewer, Group,
+                                        Review, ReviewRequest,
+                                        ReviewRequestDraft, Screenshot,
+                                        ScreenshotComment,
+                                        FileAttachmentComment)
 
 
 class CommentAdmin(admin.ModelAdmin):
@@ -25,9 +28,12 @@ class CommentAdmin(admin.ModelAdmin):
         return truncatechars(obj.text, 60)
     truncated_text.short_description = _('Comment Text')
 
+
 class DefaultReviewerAdmin(admin.ModelAdmin):
     form = DefaultReviewerForm
     filter_horizontal = ('repository', 'groups', 'people',)
+    list_display = ('name', 'file_regex')
+    raw_id_fields = ('local_site',)
     fieldsets = (
         (_('General Information'), {
             'fields': ('name', 'file_regex', 'local_site'),
@@ -43,7 +49,6 @@ class DefaultReviewerAdmin(admin.ModelAdmin):
             'fields': ('repository',),
         })
     )
-    list_display = ('name', 'file_regex')
 
 
 class GroupAdmin(admin.ModelAdmin):
@@ -51,7 +56,7 @@ class GroupAdmin(admin.ModelAdmin):
     list_display = ('name', 'display_name', 'mailing_list', 'invite_only',
                     'visible')
     filter_horizontal = ('users',)
-
+    raw_id_fields = ('local_site',)
     fieldsets = (
         (_('General Information'), {
             'fields': ('name', 'display_name', 'mailing_list',
@@ -79,7 +84,7 @@ class ReviewAdmin(admin.ModelAdmin):
     fieldsets = (
         (_('General Information'), {
             'fields': ('user', 'review_request', 'public', 'ship_it',
-                       'body_top', 'body_bottom'),
+                       'rich_text', 'body_top', 'body_bottom'),
         }),
         (_('Related Objects'), {
             'fields': ('base_reply_to',
@@ -103,28 +108,32 @@ class ReviewRequestAdmin(admin.ModelAdmin):
                    'repository')
     search_fields = ['summary']
     raw_id_fields = ('submitter', 'diffset_history', 'screenshots',
-                     'inactive_screenshots', 'changedescs')
+                     'inactive_screenshots', 'file_attachments',
+                     'inactive_file_attachments', 'changedescs', 'local_site',
+                     'depends_on', 'repository')
     filter_horizontal = ('target_people', 'target_groups')
     fieldsets = (
         (_('General Information'), {
-            'fields': ('submitter', 'public', 'status',
+            'fields': ('submitter', 'public', 'status', 'rich_text',
                        'summary', 'description', 'testing_done',
-                       'bugs_closed', 'repository', 'branch', 'changenum',
-                       'time_added')
+                       'bugs_closed', 'repository', 'branch',
+                       'depends_on', 'commit_id', 'time_added')
         }),
         (_('Reviewers'), {
             'fields': ('target_people', 'target_groups'),
         }),
         (_('Related Objects'), {
-            'fields': ('screenshots', 'inactive_screenshots', 'changedescs',
-                       'diffset_history', 'local_site'),
+            'fields': ('screenshots', 'inactive_screenshots',
+                       'file_attachments', 'inactive_file_attachments',
+                       'changedescs', 'diffset_history', 'local_site'),
             'classes': ['collapse'],
         }),
         (_('State'), {
             'description': _('<p>This is advanced state that should not be '
                              'modified unless something is wrong.</p>'),
             'fields': ('email_message_id', 'time_emailed',
-                       'last_review_timestamp', 'shipit_count', 'local_id'),
+                       'last_review_activity_timestamp',
+                       'shipit_count', 'local_id'),
             'classes': ['collapse'],
         }),
     )
@@ -185,9 +194,9 @@ class ReviewRequestDraftAdmin(admin.ModelAdmin):
     filter_horizontal = ('target_people', 'target_groups')
     fieldsets = (
         (_('General Information'), {
-            'fields': ('review_request',
+            'fields': ('review_request', 'rich_text',
                        'summary', 'description', 'testing_done',
-                       'bugs_closed', 'branch'),
+                       'depends_on', 'bugs_closed', 'branch'),
         }),
         (_('Reviewers'), {
             'fields': ('target_people', 'target_groups'),
@@ -222,7 +231,8 @@ class ScreenshotCommentAdmin(admin.ModelAdmin):
 
 
 class FileAttachmentCommentAdmin(admin.ModelAdmin):
-    list_display = ('text', 'file_attachment', 'review_request_id', 'timestamp')
+    list_display = ('text', 'file_attachment', 'review_request_id',
+                    'timestamp')
     list_filter = ('timestamp',)
     search_fields = ['caption']
     raw_id_fields = ('file_attachment', 'reply_to')

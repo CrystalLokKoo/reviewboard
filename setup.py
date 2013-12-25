@@ -25,6 +25,23 @@ from distutils.core import Command
 from reviewboard import get_package_version, is_release, VERSION
 
 
+# Make sure this is a version of Python we are compatible with. This should
+# prevent people on older versions from unintentionally trying to install
+# the source tarball, and failing.
+if sys.hexversion < 0x02050000:
+    sys.stderr.write(
+        'Review Board %s is incompatible with your version of Python.\n'
+        'Please install Review Board 1.6.x or upgrade Python to at least '
+        '2.6.x (preferably 2.7).\n' % get_package_version())
+    sys.exit(1)
+elif sys.hexversion < 0x02060000:
+    sys.stderr.write(
+        'Review Board %s is incompatible with your version of Python.\n'
+        'Please install Review Board 1.7.x or upgrade Python to at least '
+        '2.6.x (preferably 2.7).\n' % get_package_version())
+    sys.exit(1)
+
+
 # Make sure we're actually in the directory containing setup.py.
 root_dir = os.path.dirname(__file__)
 
@@ -61,6 +78,7 @@ class BuildEggInfo(egg_info):
             'bdist_egg' in sys.argv or
             'install' in sys.argv):
             self.run_command('build_media')
+            self.run_command('build_i18n')
 
         egg_info.run(self)
 
@@ -75,16 +93,36 @@ class BuildMedia(Command):
         pass
 
     def run(self):
-        retcode = subprocess.call(['./contrib/internal/build-media.py'])
+        retcode = subprocess.call([
+            sys.executable, 'contrib/internal/build-media.py'])
 
         if retcode != 0:
             raise RuntimeError('Failed to build media files')
+
+
+class BuildI18n(Command):
+    description = 'Compile message catalogs to .mo'
+    user_options = []
+
+    def initialize_options(self):
+        pass
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        retcode = subprocess.call([
+            sys.executable, 'contrib/internal/build-i18n.py'])
+
+        if retcode != 0:
+            raise RuntimeError('Failed to build i18n files')
 
 
 cmdclasses = {
     'install_data': install_data,
     'egg_info': BuildEggInfo,
     'build_media': BuildMedia,
+    'build_i18n': BuildI18n,
 }
 
 
@@ -112,13 +150,14 @@ setup(name=PACKAGE_NAME,
       author_email="reviewboard@googlegroups.com",
       maintainer="Christian Hammond",
       maintainer_email="chipx86@chipx86.com",
-      packages=find_packages(),
+      packages=find_packages(exclude=['webtests']),
       entry_points = {
           'console_scripts': [
               'rb-site = reviewboard.cmdline.rbsite:main',
               'rbssh = reviewboard.cmdline.rbssh:main',
           ],
           'reviewboard.hosting_services': [
+              'beanstalk = reviewboard.hostingsvcs.beanstalk:Beanstalk',
               'bitbucket = reviewboard.hostingsvcs.bitbucket:Bitbucket',
               'bugzilla = reviewboard.hostingsvcs.bugzilla:Bugzilla',
               'codebasehq = reviewboard.hostingsvcs.codebasehq:CodebaseHQ',
@@ -130,6 +169,7 @@ setup(name=PACKAGE_NAME,
               'redmine = reviewboard.hostingsvcs.redmine:Redmine',
               'sourceforge = reviewboard.hostingsvcs.sourceforge:SourceForge',
               'trac = reviewboard.hostingsvcs.trac:Trac',
+              'versionone = reviewboard.hostingsvcs.versionone:VersionOne',
           ],
           'reviewboard.scmtools': [
               'bzr = reviewboard.scmtools.bzr:BZRTool',
@@ -150,21 +190,23 @@ setup(name=PACKAGE_NAME,
       },
       cmdclass=cmdclasses,
       install_requires=[
-          'Django>=1.4.2',
-          'django_evolution>=0.6.7',
-          'Djblets>=0.7.2',
-          'django-pipeline>=1.2.16',
-          'Pygments>=1.4',
-          'flup',
-          'mimeparse',
-          'paramiko>=1.7.6',
+          'Django>=1.5.4,<1.6',
+          'django_evolution>=0.7.dev',
+          'Djblets>=0.8alpha1,<0.9',
+          'django-pipeline>=1.3.15',
+          'docutils',
+          'markdown>=2.3.1',
+          'mimeparse>=0.1.3',
+          'paramiko>=1.12',
+          'Pygments>=1.6',
           'python-dateutil==1.5',
           'python-memcached',
           'pytz',
           'recaptcha-client',
       ],
       dependency_links = [
-          "http://downloads.reviewboard.org/mirror/",
+          'http://downloads.reviewboard.org/mirror/',
+          'http://downloads.reviewboard.org/releases/Djblets/0.8/',
           download_url,
       ],
       include_package_data=True,

@@ -1,14 +1,24 @@
+from __future__ import unicode_literals
+
 import base64
 import logging
 import os
 import subprocess
-import urllib2
-import urlparse
+import sys
+
+from django.utils.encoding import python_2_unicode_compatible
+from django.utils.translation import ugettext_lazy as _
+from djblets.util.compat import six
+from djblets.util.compat.six.moves.urllib.error import HTTPError
+from djblets.util.compat.six.moves.urllib.parse import urlparse
+from djblets.util.compat.six.moves.urllib.request import (
+    Request as URLRequest,
+    urlopen)
 
 import reviewboard.diffviewer.parser as diffparser
-from reviewboard.scmtools.errors import AuthenticationError, \
-                                        FileNotFoundError, \
-                                        SCMError
+from reviewboard.scmtools.errors import (AuthenticationError,
+                                         FileNotFoundError,
+                                         SCMError)
 from reviewboard.ssh import utils as sshutils
 from reviewboard.ssh.errors import SSHAuthenticationError
 
@@ -26,6 +36,7 @@ class ChangeSet:
         self.pending = False
 
 
+@python_2_unicode_compatible
 class Revision(object):
     def __init__(self, name):
         self.name = name
@@ -34,13 +45,65 @@ class Revision(object):
         return self.name
 
     def __eq__(self, other):
-        return self.name == str(other)
+        return self.name == six.text_type(other)
 
     def __ne__(self, other):
-        return self.name != str(other)
+        return self.name != six.text_type(other)
 
     def __repr__(self):
         return '<Revision: %s>' % self.name
+
+
+class Branch(object):
+    def __init__(self, name='', commit='', default=False):
+        self.name = name
+        self.commit = commit
+        self.default = default
+
+    def __eq__(self, other):
+        return (self.name == other.name and
+                self.commit == other.commit and
+                self.default == other.default)
+
+
+class Commit(object):
+    def __init__(self, author_name='', id='', date='', message='', parent=''):
+        self.author_name = author_name
+        self.id = id
+        self.date = date
+        self.message = message
+        self.parent = parent
+
+        # This field is only used when we're actually fetching the commit from
+        # the server to create a new review request, and isn't part of the
+        # equality test.
+        self.diff = None
+
+    def __eq__(self, other):
+        return (self.author_name == other.author_name and
+                self.id == other.id and
+                self.date == other.date and
+                self.message == other.message and
+                self.parent == other.parent)
+
+    def split_message(self):
+        """Get a split version of the commit message.
+
+        This will return a tuple of (summary, message). If the commit message
+        is only a single line, both will be that line.
+        """
+        message = self.message
+        parts = message.split('\n', 1)
+        summary = parts[0]
+        try:
+            message = parts[1]
+        except IndexError:
+            # If the description is only one line long, pass through--'message'
+            # will still be set to what we got from get_change, and will show
+            # up as being the same thing as the summary.
+            pass
+
+        return summary, message
 
 
 HEAD = Revision("HEAD")
@@ -51,9 +114,15 @@ PRE_CREATION = Revision("PRE-CREATION")
 class SCMTool(object):
     name = None
     uses_atomic_revisions = False
-    diff_uses_changeset_ids = False
     supports_authentication = False
+    supports_pending_changesets = False
+    supports_post_commit = False
     supports_raw_file_urls = False
+    supports_ticket_auth = False
+    field_help_text = {
+        'path': _('The path to the repository. This will generally be the URL '
+                  'you would use to check out the repository.'),
+    }
 
     # A list of dependencies for this SCMTool. This should be overridden
     # by subclasses. Python module names go in dependencies['modules'] and
@@ -95,6 +164,36 @@ class SCMTool(object):
     def get_repository_info(self):
         raise NotImplementedError
 
+    def get_branches(self):
+        """Get a list of all branches in the repositories.
+
+        This should be implemented by subclasses, and is expected to return a
+        list of Branch objects. One (and only one) of those objects should have
+        the "default" field set to True.
+        """
+        raise NotImplementedError
+
+    def get_commits(self, start):
+        """Get a list of commits backward in history from a given starting point.
+
+        This should be implemented by subclasses, and is expected to return a
+        list of Commit objects (usually 30, but this is flexible depending on
+        the limitations of the APIs provided.
+
+        This can be called multiple times in succession using the "parent" field
+        of the last entry as the start parameter in order to paginate through
+        the history of commits in the repository.
+        """
+        raise NotImplementedError
+
+    def get_change(self, repository, revision):
+        """Get an individual change.
+
+        This should be implemented by subclasses, and is expected to return a
+        tuple of (commit message, diff), both strings.
+        """
+        raise NotImplementedError
+
     def get_fields(self):
         # This is kind of a crappy mess in terms of OO design.  Oh well.
         # Return a list of fields which are valid for this tool in the "new
@@ -127,6 +226,8 @@ class SCMTool(object):
         if local_site_name:
             env['RB_LOCAL_SITE'] = local_site_name
 
+        env['PYTHONPATH'] = ':'.join(sys.path)
+
         return subprocess.Popen(command,
                                 env=env,
                                 stderr=subprocess.PIPE,
@@ -150,16 +251,16 @@ class SCMTool(object):
         if sshutils.is_ssh_uri(path):
             username, hostname = SCMTool.get_auth_from_uri(path, username)
             logging.debug(
-                "%s: Attempting ssh connection with host: %s, username: %s" % \
-                (cls.__name__, hostname, username))
+                "%s: Attempting ssh connection with host: %s, username: %s"
+                % (cls.__name__, hostname, username))
 
             try:
                 sshutils.check_host(hostname, username, password,
                                     local_site_name)
-            except SSHAuthenticationError, e:
+            except SSHAuthenticationError as e:
                 # Represent an SSHAuthenticationError as a standard
                 # AuthenticationError.
-                raise AuthenticationError(e.allowed_types, unicode(e),
+                raise AuthenticationError(e.allowed_types, six.text_type(e),
                                           e.user_key)
             except:
                 # Re-raise anything else
@@ -173,7 +274,7 @@ class SCMTool(object):
         If a username is implicitly passed via the path (user@host), it
         takes precedence over a passed username.
         """
-        url = urlparse.urlparse(path)
+        url = urlparse(path)
 
         if '@' in url[1]:
             netloc_username, hostname = url[1].split('@', 1)
@@ -187,7 +288,7 @@ class SCMTool(object):
             return username, hostname
 
     @classmethod
-    def accept_certificate(cls, path, local_site_name=None):
+    def accept_certificate(cls, path, local_site_name=None, certificate=None):
         """Accepts the certificate for the given repository path."""
         raise NotImplementedError
 
@@ -212,15 +313,15 @@ class SCMClient(object):
         logging.info('Fetching file from %s' % url)
 
         try:
-            request = urllib2.Request(url)
+            request = URLRequest(url)
 
             if self.username:
                 auth_string = base64.b64encode('%s:%s' % (self.username,
                                                           self.password))
                 request.add_header('Authorization', 'Basic %s' % auth_string)
 
-            return urllib2.urlopen(request).read()
-        except urllib2.HTTPError, e:
+            return urlopen(request).read()
+        except HTTPError as e:
             if e.code == 404:
                 logging.error('404')
                 raise FileNotFoundError(path, revision)
@@ -229,7 +330,7 @@ class SCMClient(object):
                       (e.code, url, e)
                 logging.error(msg)
                 raise SCMError(msg)
-        except Exception, e:
+        except Exception as e:
             msg = "Unexpected error fetching file from %s: %s" % (url, e)
             logging.error(msg)
             raise SCMError(msg)

@@ -1,10 +1,7 @@
-{% extends "reviews/ui/base.html" %}
+{% block review_ui_css %}{% endblock %}
 
-{% block headerbar %}{% endblock %}
+<div class="review-ui-inline">
+{% block review_ui_content %}{% endblock %}
+</div>
 
-{% block review_banner %}{% endblock %}
-
-{% block content %}
-{%  block review_ui_content %}
-{%  endblock %}
-{% endblock %}
+{% block review_ui_scripts %}{% endblock %}

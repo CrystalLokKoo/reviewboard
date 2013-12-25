@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.contrib.auth.models import User
 from django.http import HttpRequest
 from django.template import Context, Template
@@ -35,7 +37,7 @@ class BasicTests(TestCase):
         self.assertEqual(local_site_reverse('user', args=['sample-user']),
                          '/users/sample-user/')
         self.assertEqual(
-            local_site_reverse('user', kwargs={'username': 'sample-user' }),
+            local_site_reverse('user', kwargs={'username': 'sample-user'}),
             '/users/sample-user/')
 
     def test_local_site_reverse_with_local_site(self):
@@ -49,7 +51,7 @@ class BasicTests(TestCase):
                                             request=request),
                          '/users/sample-user/')
         self.assertEqual(
-            local_site_reverse('user', kwargs={'username': 'sample-user' },
+            local_site_reverse('user', kwargs={'username': 'sample-user'},
                                request=request),
             '/users/sample-user/')
 
@@ -59,10 +61,10 @@ class TemplateTagTests(TestCase):
         """Testing localsite's {% url %} with no local site"""
         context = Context({})
 
-        t = Template('{% url dashboard %}')
+        t = Template('{% url "dashboard" %}')
         self.assertEquals(t.render(context), '/dashboard/')
 
-        t = Template('{% url user "sample-user" %}')
+        t = Template('{% url "user" "sample-user" %}')
         self.assertEquals(t.render(context), '/users/sample-user/')
 
     def test_local_site_url_with_local_site(self):
@@ -75,8 +77,8 @@ class TemplateTagTests(TestCase):
             'local_site_name': 'test',
         })
 
-        t = Template('{% url dashboard %}')
+        t = Template('{% url "dashboard" %}')
         self.assertEquals(t.render(context), '/s/test/dashboard/')
 
-        t = Template('{% url user "sample-user" %}')
+        t = Template('{% url "user" "sample-user" %}')
         self.assertEquals(t.render(context), '/s/test/users/sample-user/')

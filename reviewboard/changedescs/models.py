@@ -1,10 +1,14 @@
+from __future__ import unicode_literals
+
 from django.contrib.auth.models import User
 from django.db import models
-from django.utils import timezone
+from django.utils import six, timezone
+from django.utils.encoding import python_2_unicode_compatible
 from django.utils.translation import ugettext_lazy as _
-from djblets.util.fields import JSONField
+from djblets.db.fields import JSONField
 
 
+@python_2_unicode_compatible
 class ChangeDescription(models.Model):
     """
     The recorded set of changes, containing optional description text
@@ -37,6 +41,7 @@ class ChangeDescription(models.Model):
     timestamp = models.DateTimeField(_('timestamp'), default=timezone.now)
     public = models.BooleanField(_("public"), default=False)
     text = models.TextField(_("change text"), blank=True)
+    rich_text = models.BooleanField(_("rich text"), default=True)
     fields_changed = JSONField(_("fields changed"))
 
     def record_field_change(self, field, old_value, new_value,
@@ -67,8 +72,8 @@ class ChangeDescription(models.Model):
                 return [(item,) for item in list(items)]
 
         if (type(old_value) != type(new_value) and
-            not (isinstance(old_value, basestring) and
-                 isinstance(new_value, basestring))):
+            not (isinstance(old_value, six.string_types) and
+                 isinstance(new_value, six.string_types))):
             raise ValueError("%s (%s) and %s (%s) are of two different value "
                              "types." % (old_value, type(old_value),
                                          new_value, type(new_value)))
@@ -91,7 +96,7 @@ class ChangeDescription(models.Model):
                 'new': (new_value,),
             }
 
-    def __unicode__(self):
+    def __str__(self):
         return self.text
 
     class Meta:

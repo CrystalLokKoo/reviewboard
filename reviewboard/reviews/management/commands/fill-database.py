@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import os
 import random
 import string
@@ -6,13 +8,14 @@ from optparse import make_option
 
 from django import db
 from django.contrib.auth.models import User
-from django.core.files.uploadedfile import UploadedFile
-from django.core.management.base import (
-    BaseCommand, CommandError, NoArgsCommand )
+from django.core.files import File
+from django.core.management.base import (BaseCommand, CommandError,
+                                         NoArgsCommand)
 from django.db import transaction
+from djblets.util.compat import six
 
 from reviewboard.accounts.models import Profile
-from reviewboard.diffviewer.forms import UploadDiffForm
+from reviewboard.reviews.forms import UploadDiffForm
 from reviewboard.diffviewer.models import DiffSetHistory
 from reviewboard.reviews.models import ReviewRequest, Review, Comment
 from reviewboard.scmtools.models import Repository, Tool
@@ -20,8 +23,8 @@ from reviewboard.scmtools.models import Repository, Tool
 NORMAL = 1
 DESCRIPTION_SIZE = 100
 SUMMARY_SIZE = 6
-LOREM_VOCAB = \
-    ['Lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur',
+LOREM_VOCAB = [
+    'Lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur',
     'Nullam', 'quis', 'erat', 'libero.', 'Ut', 'vel', 'velit', 'augue, ',
     'risus.', 'Curabitur', 'dignissim', 'luctus', 'dui, ', 'et',
     'tristique', 'id.', 'Etiam', 'blandit', 'adipiscing', 'molestie.',
@@ -55,10 +58,11 @@ LOREM_VOCAB = \
     'Suspendisse', 'ipsum', 'dui, ', 'accumsan', 'eget', 'imperdiet',
     'est.', 'Integer', 'porta, ', 'ante', 'ac', 'commodo', 'faucibus',
     'molestie', 'risus, ', 'a', 'imperdiet', 'eros', 'neque', 'ac',
-    'nisi', 'leo', 'pretium', 'congue', 'eget', 'quis', 'arcu.', 'Cras']
+    'nisi', 'leo', 'pretium', 'congue', 'eget', 'quis', 'arcu.', 'Cras'
+]
 
-NAMES = \
-    ['Aaron', 'Abbey', 'Adan', 'Adelle', 'Agustin','Alan', 'Aleshia',
+NAMES = [
+    'Aaron', 'Abbey', 'Adan', 'Adelle', 'Agustin', 'Alan', 'Aleshia',
     'Alexia', 'Anderson', 'Ashely', 'Barbara', 'Belen', 'Bernardo',
     'Bernie', 'Bethanie', 'Bev', 'Boyd', 'Brad', 'Bret', 'Caleb',
     'Cammy', 'Candace', 'Carrol', 'Charlette', 'Charlie', 'Chelsea',
@@ -85,7 +89,8 @@ NAMES = \
     'Solinski', 'Swisher', 'Talladino', 'Tatham', 'Thornhill',
     'Ulabarro', 'Welander', 'Xander', 'Xavier', 'Xayas', 'Yagecic',
     'Yagerita', 'Yamat', 'Ying', 'Yurek', 'Zaborski', 'Zeccardi',
-    'Zecchini', 'Zimerman', 'Zitzow', 'Zoroiwchak', 'Zullinger', 'Zyskowski']
+    'Zecchini', 'Zimerman', 'Zitzow', 'Zoroiwchak', 'Zullinger', 'Zyskowski'
+]
 
 
 class Command(NoArgsCommand):
@@ -93,18 +98,19 @@ class Command(NoArgsCommand):
 
     option_list = BaseCommand.option_list + (
         make_option('-u', '--users', type="int", default=None, dest='users',
-            help='The number of users to add'),
+                    help='The number of users to add'),
         make_option('--review-requests', default=None, dest='review_requests',
-            help='The number of review requests per user [min:max]'),
+                    help='The number of review requests per user [min:max]'),
         make_option('--diffs', default=None, dest='diffs',
-            help='The number of diff per review request [min:max]'),
+                    help='The number of diff per review request [min:max]'),
         make_option('--reviews', default=None, dest='reviews',
-            help='The number of reviews per diff [min:max]'),
+                    help='The number of reviews per diff [min:max]'),
         make_option('--diff-comments', default=None, dest='diff_comments',
-            help='The number of comments per diff [min:max]'),
+                    help='The number of comments per diff [min:max]'),
         make_option('-p', '--password', type="string", default=None,
-            dest='password', help='The login password for users created')
-        )
+                    dest='password',
+                    help='The login password for users created')
+    )
 
     @transaction.commit_on_success
     def handle_noargs(self, users=None, review_requests=None, diffs=None,
@@ -121,8 +127,9 @@ class Command(NoArgsCommand):
                                                 review_requests)
 
             # Setup repository.
-            repo_dir = os.path.abspath(os.path.join(sys.argv[0], "..",
-                "scmtools", "testdata", "git_repo"))
+            repo_dir = os.path.abspath(
+                os.path.join(sys.argv[0], "..", "scmtools", "testdata",
+                             "git_repo"))
 
             # Throw exception on error so transaction reverts.
             if not os.path.exists(repo_dir):
@@ -130,15 +137,15 @@ class Command(NoArgsCommand):
 
             self.repository = Repository.objects.create(
                 name="Test Repository", path=repo_dir,
-                tool=Tool.objects.get(name="Git")
-                )
+                tool=Tool.objects.get(name="Git"))
 
         if diffs:
             num_of_diffs = self.parseCommand("diffs", diffs)
 
             # Create the diff directory locations.
-            diff_dir_tmp = os.path.abspath(os.path.join((sys.argv[0]),
-                "..", "reviews", "management", "commands", "diffs"))
+            diff_dir_tmp = os.path.abspath(
+                os.path.join(sys.argv[0], "..", "reviews", "management",
+                             "commands", "diffs"))
 
             # Throw exception on error so transaction reverts.
             if not os.path.exists(diff_dir_tmp):
@@ -195,12 +202,12 @@ class Command(NoArgsCommand):
             req_val = self.pickRandomValue(num_of_requests)
 
             if int(verbosity) > NORMAL:
-                print "For user %s:%s" % (i, new_user.username)
-                print "============================="
+                self.stdout.write("For user %s:%s" % (i, new_user.username))
+                self.stdout.write("=============================")
 
             for j in range(0, req_val):
                 if int(verbosity) > NORMAL:
-                    print "Request #%s:" % j
+                    self.stdout.write("Request #%s:" % j)
 
                 review_request = ReviewRequest.objects.create(new_user, None)
                 review_request.public = True
@@ -219,19 +226,23 @@ class Command(NoArgsCommand):
                 # If adding diffs add history.
                 if diff_val > 0:
                     diffset_history = DiffSetHistory.objects.create(
-                        name='testDiffFile' + str(i))
+                        name='testDiffFile' + six.text_type(i))
                     diffset_history.save()
 
                 # Won't execute if diff_val is 0, ie: no diffs requested.
                 for k in range(0, diff_val):
                     if int(verbosity) > NORMAL:
-                        print "%s:\tDiff #%s" % (i, k)
+                        self.stdout.write("%s:\tDiff #%s" % (i, k))
 
                     random_number = random.randint(0, len(files) - 1)
                     file_to_open = diff_dir + files[random_number]
-                    f = UploadedFile(open(file_to_open, 'r'))
-                    form = UploadDiffForm(review_request.repository, f)
-                    cur_diff = form.create(f, None, diffset_history)
+                    f = open(file_to_open, 'r')
+                    form = UploadDiffForm(review_request=review_request,
+                                          files={"path" : File(f)})
+
+                    if form.is_valid():
+                        cur_diff = form.create(f, None, diffset_history)
+
                     review_request.diffset_history = diffset_history
                     review_request.save()
                     review_request.publish(new_user)
@@ -242,7 +253,8 @@ class Command(NoArgsCommand):
 
                     for l in range(0, review_val):
                         if int(verbosity) > NORMAL:
-                            print "%s:%s:\t\tReview #%s:" % (i, j, l)
+                            self.stdout.write("%s:%s:\t\tReview #%s:" %
+                                              (i, j, l))
 
                         reviews = Review.objects.create(
                             review_request=review_request,
@@ -256,13 +268,15 @@ class Command(NoArgsCommand):
 
                         for m in range(0, comment_val):
                             if int(verbosity) > NORMAL:
-                                print "%s:%s:\t\t\tComments #%s" % (i, j, m)
+                                self.stdout.write("%s:%s:\t\t\tComments #%s" %
+                                                  (i, j, m))
 
                             if m == 0:
                                 file_diff = cur_diff.files.order_by('id')[0]
 
                             # Choose random lines to comment.
-                            # Max lines: should be mod'd in future to read diff.
+                            # Max lines: should be mod'd in future to read
+                            # diff.
                             max_lines = 220
                             first_line = random.randrange(1, max_lines - 1)
                             remain_lines = max_lines - first_line
@@ -297,20 +311,20 @@ class Command(NoArgsCommand):
 
             # Generate output as users & data is created.
             if req_val != 0:
-                print "user %s created with %s requests" % (
-                    new_user.username, req_val)
+                self.stdout.write("user %s created with %s requests"
+                                  % (new_user.username, req_val))
             else:
-                print "user %s created successfully" % new_user.username
+                self.stdout.write("user %s created successfully"
+                                  % new_user.username)
 
     def parseCommand(self, com_arg, com_string):
         """Parse the values given in the command line."""
         try:
             return tuple((int(item.strip()) for item in com_string.split(':')))
         except ValueError:
-            print >> sys.stderr, "You failed to provide \"" + com_arg \
-                + "\" with one or two values of type int.\n" +\
-                "Example: --" + com_arg + "=2:5"
-            exit()
+            raise CommandError('You failed to provide "%s" with one or two '
+                               'values of type int.\nExample: --%s=2:5'
+                               % (com_arg, com_arg))
 
     def randUsername(self):
         """Used to generate random usernames so no flushing needed."""

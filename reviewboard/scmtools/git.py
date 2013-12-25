@@ -1,24 +1,20 @@
+from __future__ import unicode_literals
+
 import logging
 import os
 import re
-import urlparse
-
-# Python 2.5+ provides urllib2.quote, whereas Python 2.4 only
-# provides urllib.quote.
-try:
-    from urllib2 import quote as urllib_quote
-except ImportError:
-    from urllib import quote as urllib_quote
 
 from django.utils.translation import ugettext_lazy as _
+from djblets.util.compat import six
+from djblets.util.compat.six.moves.urllib.parse import quote as urlquote
 from djblets.util.filesystem import is_exe_in_path
 
 from reviewboard.diffviewer.parser import DiffParser, DiffParserError, File
 from reviewboard.scmtools.core import SCMClient, SCMTool, HEAD, PRE_CREATION
-from reviewboard.scmtools.errors import FileNotFoundError, \
-                                        InvalidRevisionFormatError, \
-                                        RepositoryNotFoundError, \
-                                        SCMError
+from reviewboard.scmtools.errors import (FileNotFoundError,
+                                         InvalidRevisionFormatError,
+                                         RepositoryNotFoundError,
+                                         SCMError)
 from reviewboard.ssh import utils as sshutils
 
 
@@ -26,8 +22,19 @@ GIT_DIFF_EMPTY_CHANGESET_SIZE = 3
 GIT_DIFF_PREFIX = re.compile('^[ab]/')
 
 
+try:
+    import urlparse
+    uses_netloc = urlparse.uses_netloc
+    urllib_urlparse = urlparse.urlparse
+except ImportError:
+    import urllib.parse
+    uses_netloc = urllib.parse.uses_netloc
+    urllib_urlparse = urllib.parse.urlparse
+
+
 # Register these URI schemes so we can handle them properly.
-urlparse.uses_netloc.append('git')
+uses_netloc.append('git')
+
 
 sshutils.register_rbssh('GIT_SSH')
 
@@ -38,8 +45,9 @@ class ShortSHA1Error(InvalidRevisionFormatError):
             self,
             path=path,
             revision=revision,
-            detail='The SHA1 is too short. Make sure the diff is generated '
-                   'with `git diff --full-index`.',
+            detail=six.text_type(_('The SHA1 is too short. Make sure the diff '
+                                   'is generated with `git diff '
+                                   '--full-index`.')),
             *args, **kwargs)
 
 
@@ -52,6 +60,11 @@ class GitTool(SCMTool):
     name = "Git"
     supports_raw_file_urls = True
     supports_authentication = True
+    field_help_text = {
+        'path': _('For local Git repositories, this should be the path to a '
+                  '.git directory that Review Board can read from. For remote '
+                  'Git repositories, it should be the clone URL.'),
+    }
     dependencies = {
         'executables': ['git']
     }
@@ -165,6 +178,10 @@ class GitDiffParser(DiffParser):
 
             i = next_i
 
+        if not self.files and preamble.strip() != '':
+            # This is probably not an actual git diff file.
+            raise DiffParserError('This does not appear to be a git diff', 0)
+
         return self.files
 
     def _parse_diff(self, linenum):
@@ -186,9 +203,6 @@ class GitDiffParser(DiffParser):
         # a file mode change with no content or
         # a deleted file with no content
         # then skip
-
-        empty_change = self._is_empty_change(linenum)
-        empty_change_linenum = linenum + GIT_DIFF_EMPTY_CHANGESET_SIZE
 
         # Now we have a diff we are going to use so get the filenames + commits
         file_info = File()
@@ -226,11 +240,13 @@ class GitDiffParser(DiffParser):
             linenum += 3
             file_info.moved = True
 
-        # Only show interesting empty changes. Basically, deletions.
-        # It's likely a binary file if we're at this point, and so we want
-        # to process the rest of it.
-        if empty_change and not file_info.deleted:
-            return empty_change_linenum, None
+        # Check to make sure we haven't reached the end of the diff.
+        if linenum >= len(self.lines):
+            return linenum, None
+
+        # Assume by default that the change is empty. If we find content
+        # later, we'll clear this.
+        empty_change = True
 
         if self._is_index_range_line(linenum):
             index_range = self.lines[linenum].split(None, 2)[1]
@@ -247,34 +263,34 @@ class GitDiffParser(DiffParser):
         # Get the changes
         while linenum < len(self.lines):
             if self._is_git_diff(linenum):
-                return linenum, file_info
-
-            if self._is_binary_patch(linenum):
+                break
+            elif self._is_binary_patch(linenum):
                 file_info.binary = True
                 file_info.data += self.lines[linenum] + "\n"
-                return linenum + 1, file_info
-
-            if self._is_diff_fromfile_line(linenum):
+                empty_change = False
+                linenum += 1
+                break
+            elif self._is_diff_fromfile_line(linenum):
                 if self.lines[linenum].split()[1] == "/dev/null":
                     file_info.origInfo = PRE_CREATION
 
-            file_info.data += self.lines[linenum] + "\n"
-            linenum += 1
+                file_info.data += self.lines[linenum] + '\n'
+                file_info.data += self.lines[linenum + 1] + '\n'
+                linenum += 2
+            else:
+                empty_change = False
+                linenum = self.parse_diff_line(linenum, file_info)
+
+        if empty_change:
+            # We didn't find any interesting content, so leave out this
+            # file's info.
+            #
+            # Note that we may want to change this in the future to preserve
+            # data like mode changes, but that will require filtering out
+            # empty changes at the diff viewer level in a sane way.
+            file_info = None
 
         return linenum, file_info
-
-    def _is_empty_change(self, linenum):
-        next_diff_start_linenum = linenum + GIT_DIFF_EMPTY_CHANGESET_SIZE
-
-        if next_diff_start_linenum >= len(self.lines):
-            return True
-
-        next_diff_start = self.lines[next_diff_start_linenum]
-        next_line = self.lines[linenum + 1]
-        return ((next_line.startswith("new file mode") or
-                 next_line.startswith("old mode") or
-                 next_line.startswith("deleted file mode"))
-                and next_diff_start.startswith("diff --git"))
 
     def _is_new_file(self, linenum):
         return self.lines[linenum].startswith("new file mode")
@@ -343,7 +359,7 @@ class GitClient(SCMClient):
         self.local_site_name = local_site_name
         self.git_dir = None
 
-        url_parts = urlparse.urlparse(self.path)
+        url_parts = urllib_urlparse(self.path)
 
         if url_parts[0] == 'file':
             self.git_dir = url_parts[2]
@@ -412,7 +428,7 @@ class GitClient(SCMClient):
     def _build_raw_url(self, path, revision):
         url = self.raw_file_url
         url = url.replace("<revision>", revision)
-        url = url.replace("<filename>", urllib_quote(path))
+        url = url.replace("<filename>", urlquote(path))
         return url
 
     def _cat_file(self, path, revision, option):
@@ -431,7 +447,7 @@ class GitClient(SCMClient):
         p = self._run_git(['--git-dir=%s' % self.git_dir, 'cat-file',
                            option, commit])
         contents = p.stdout.read()
-        errmsg = p.stderr.read()
+        errmsg = six.text_type(p.stderr.read())
         failure = p.wait()
 
         if failure:
@@ -448,13 +464,13 @@ class GitClient(SCMClient):
                 raise SCMError("path must be supplied if revision is %s" % HEAD)
             return "HEAD:%s" % path
         else:
-            return str(revision)
+            return six.text_type(revision)
 
     def _normalize_git_url(self, path):
         if path.startswith('file://'):
             return path
 
-        url_parts = urlparse.urlparse(path)
+        url_parts = urllib_urlparse(path)
         scheme = url_parts[0]
         netloc = url_parts[1]
 

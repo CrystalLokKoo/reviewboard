@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import logging
 import os
 
@@ -30,6 +32,15 @@ class SSHStorage(object):
 
         It may also raise :py:mod:`paramiko.SSHException` for key-related
         errors.
+        """
+        raise NotImplementedError
+
+    def delete_user_key(self, key):
+        """Deletes a user key.
+
+        The user key, if it exists, will be removed from storage.
+
+        If no user key exists, this will do nothing.
         """
         raise NotImplementedError
 
@@ -75,7 +86,7 @@ class FileSSHStorage(SSHStorage):
 
     _ssh_dir = None
 
-    def read_user_key(self):
+    def get_user_key_info(self):
         for cls, filename in self.DEFAULT_KEY_FILES:
             # Paramiko looks in ~/.ssh and ~/ssh, depending on the platform,
             # so check both.
@@ -83,7 +94,15 @@ class FileSSHStorage(SSHStorage):
                 path = os.path.join(self.get_ssh_dir(sshdir), filename)
 
                 if os.path.isfile(path):
-                    return cls.from_private_key_file(path)
+                    return cls, path
+
+        return None, None
+
+    def read_user_key(self):
+        cls, path = self.get_user_key_info()
+
+        if path:
+            return cls.from_private_key_file(path)
 
         return None
 
@@ -101,6 +120,13 @@ class FileSSHStorage(SSHStorage):
         filename = os.path.join(sshdir, key_filename)
         key.write_private_key_file(filename)
 
+    def delete_user_key(self):
+        cls, path = self.get_user_key_info()
+
+        if path:
+            # Allow any exceptions to bubble up.
+            os.unlink(path)
+
     def read_authorized_keys(self):
         filename = os.path.join(self.get_ssh_dir(), 'authorized_keys')
 
@@ -110,7 +136,7 @@ class FileSSHStorage(SSHStorage):
             fp.close()
 
             return lines
-        except IOError, e:
+        except IOError as e:
             logging.warning('Unable to read SSH authorized_keys file %s: %s'
                             % (filename, e))
             raise
@@ -121,16 +147,13 @@ class FileSSHStorage(SSHStorage):
 
         if os.path.exists(filename):
             try:
-                fp = open(filename, 'r')
+                with open(filename, 'r') as f:
+                    for line in f:
+                        line = line.strip()
 
-                for line in fp.xreadlines():
-                    line = line.strip()
-
-                    if line and line[0] != '#':
-                        lines.append(line)
-
-                fp.close()
-            except IOError, e:
+                        if line and line[0] != '#':
+                            lines.append(line)
+            except IOError as e:
                 logging.error('Unable to read host keys file %s: %s'
                               % (filename, e))
 
@@ -141,11 +164,10 @@ class FileSSHStorage(SSHStorage):
         filename = self.get_host_keys_filename()
 
         try:
-            fp = open(filename, 'a')
-            fp.write('%s %s %s\n' % (hostname, key.get_name(),
-                                     key.get_base64()))
-            fp.close()
-        except IOError, e:
+            with open(filename, 'a') as fp:
+                fp.write('%s %s %s\n' % (hostname, key.get_name(),
+                                         key.get_base64()))
+        except IOError as e:
             raise IOError(
                 _('Unable to write host keys file %(filename)s: %(error)s') % {
                     'filename': filename,
@@ -160,12 +182,11 @@ class FileSSHStorage(SSHStorage):
             return
 
         try:
-            fp = open(filename, 'r')
-            lines = fp.readlines()
-            fp.close()
+            with open(filename, 'r') as fp:
+                lines = fp.readlines()
 
             old_key_base64 = old_key.get_base64()
-        except IOError, e:
+        except IOError as e:
             raise IOError(
                 _('Unable to read host keys file %(filename)s: %(error)s') % {
                     'filename': filename,
@@ -173,19 +194,16 @@ class FileSSHStorage(SSHStorage):
                 })
 
         try:
-            fp = open(filename, 'w')
+            with open(filename, 'w') as fp:
+                for line in lines:
+                    parts = line.strip().split(" ")
 
-            for line in lines:
-                parts = line.strip().split(" ")
+                    if parts[-1] == old_key_base64:
+                        parts[1] = new_key.get_name()
+                        parts[-1] = new_key.get_base64()
 
-                if parts[-1] == old_key_base64:
-                    parts[1] = new_key.get_name()
-                    parts[-1] = new_key.get_base64()
-
-                fp.write(' '.join(parts) + '\n')
-
-            fp.close()
-        except IOError, e:
+                    fp.write(' '.join(parts) + '\n')
+        except IOError as e:
             raise IOError(
                 _('Unable to write host keys file %(filename)s: %(error)s') % {
                     'filename': filename,
@@ -242,7 +260,7 @@ class FileSSHStorage(SSHStorage):
 
         if not os.path.exists(sshdir):
             try:
-                os.makedirs(sshdir, 0700)
+                os.makedirs(sshdir, 0o700)
             except OSError:
                 raise MakeSSHDirError(sshdir)
 

@@ -1,53 +1,29 @@
 #!/usr/bin/env python
 
+from __future__ import unicode_literals
+
 import imp
-import sys
 import os
+import subprocess
+import sys
 from os.path import abspath, dirname
 
-# Add the parent directory of 'manage.py' to the python path, so manage.py can
-# be run from any directory.  From http://www.djangosnippets.org/snippets/281/
-sys.path.insert(0, dirname(dirname(abspath(__file__))))
-
-try:
-    import settings  # Assumed to be in the same directory.
-except ImportError, e:
-    sys.stderr.write("Error: Can't find the file 'settings.py' in the "
-                     "directory containing %r. It appears you've "
-                     "customized things.\n"
-                     "You'll have to run django-admin.py, passing it your "
-                     "settings module.\n"
-                     "(If the file settings.py does indeed exist, it's causing"
-                     " an ImportError somehow.)\n" % __file__)
-    sys.stderr.write("The error we got was: %s\n" % e)
-    sys.exit(1)
-
-if dirname(settings.__file__) == os.getcwd():
-    sys.stderr.write("manage.py should not be run from within the "
-                     "'reviewboard' Python package directory.\n")
-    sys.stderr.write("Make sure to run this from the top of the Review Board "
-                     "source tree.\n")
-    sys.exit(1)
-
-from django.core.management import execute_manager, setup_environ
+from django.core.management import execute_from_command_line
 
 
 warnings_found = 0
 
 
-def check_dependencies():
+def check_dependencies(settings):
     # Some of our checks require access to django.conf.settings, so
     # tell Django about our settings.
     #
-    # This must go before the imports.
-    setup_environ(settings)
-
     from django.template.defaultfilters import striptags
     from djblets.util.filesystem import is_exe_in_path
 
     from reviewboard.admin import checks
 
-    from settings import dependency_error
+    dependency_error = settings.dependency_error
 
     # Python 2.4
     if sys.version_info[0] < 2 or \
@@ -75,8 +51,6 @@ def check_dependencies():
         import recaptcha
     except ImportError:
         dependency_error('The recaptcha python module is required.')
-
-    import subprocess
 
     # The following checks are non-fatal warnings, since these dependencies are
     # merely recommended, not required.
@@ -161,29 +135,56 @@ def include_enabled_extensions(settings):
         load_app(extension.info.app_name)
 
 
-if __name__ == "__main__":
+def main(settings):
+    if dirname(settings.__file__) == os.getcwd():
+        sys.stderr.write("manage.py should not be run from within the "
+                         "'reviewboard' Python package directory.\n")
+        sys.stderr.write("Make sure to run this from the top of the "
+                         "Review Board source tree.\n")
+        sys.exit(1)
+
     if len(sys.argv) > 1 and \
        (sys.argv[1] == 'runserver' or sys.argv[1] == 'test'):
         if settings.DEBUG:
             # If DJANGO_SETTINGS_MODULE is in our environment, we're in
-            # execute_manager's sub-process.  It doesn't make sense to do this
-            # check twice, so just return.
+            # execute_from_command_line's sub-process.  It doesn't make sense
+            # to do this check twice, so just return.
             if 'DJANGO_SETTINGS_MODULE' not in os.environ:
                 sys.stderr.write('Running dependency checks (set DEBUG=False '
                                  'to turn this off)...\n')
-                check_dependencies()
+                check_dependencies(settings)
     else:
         # Some of our checks require access to django.conf.settings, so
         # tell Django about our settings.
         #
-        # This must go before the imports.
-        setup_environ(settings)
-
-        # Initialize Review Board, so we're in a state ready to load extensions and
-        # run management commands.
+        # Initialize Review Board, so we're in a state ready to load
+        # extensions and run management commands.
         from reviewboard import initialize
         initialize()
 
         include_enabled_extensions(settings)
 
-    execute_manager(settings)
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == "__main__":
+    # Add the parent directory of 'manage.py' to the python path, so
+    # manage.py can be run from any directory.
+    # From http://www.djangosnippets.org/snippets/281/
+    sys.path.insert(0, dirname(dirname(abspath(__file__))))
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'reviewboard.settings')
+
+    try:
+        from reviewboard import settings
+    except ImportError as e:
+        sys.stderr.write("Error: Can't find the file 'settings.py' in the "
+                         "directory containing %r. It appears you've "
+                         "customized things.\n"
+                         "You'll have to run django-admin.py, passing it your "
+                         "settings module.\n"
+                         "(If the file settings.py does indeed exist, it's "
+                         "causing an ImportError somehow.)\n" % __file__)
+        sys.stderr.write("The error we got was: %s\n" % e)
+        sys.exit(1)
+
+    main(settings)

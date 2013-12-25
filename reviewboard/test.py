@@ -23,6 +23,8 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+from __future__ import unicode_literals
+
 import os
 import sys
 import tempfile
@@ -48,7 +50,7 @@ except ImportError:
         pass
 
 from django.conf import settings
-from djblets.util.misc import generate_media_serial
+from djblets.cache.serials import generate_media_serial
 
 
 class RBTestRunner(DjangoTestSuiteRunner):
@@ -78,6 +80,7 @@ class RBTestRunner(DjangoTestSuiteRunner):
         self.nose_argv = [
             sys.argv[0],
             '-v',
+            '--match=^test',
             '--with-doctest',
             '--doctest-extension=.txt',
         ]
@@ -101,7 +104,7 @@ class RBTestRunner(DjangoTestSuiteRunner):
             profiling = False
 
         # manage.py captures everything before "--"
-        if len(sys.argv) > 2 and sys.argv.__contains__("--"):
+        if len(sys.argv) > 2 and '--' in sys.argv:
             self.nose_argv += sys.argv[(sys.argv.index("--") + 1):]
 
         if profiling:
@@ -142,7 +145,9 @@ class RBTestRunner(DjangoTestSuiteRunner):
             os.makedirs(images_dir)
 
         # Collect all static media needed for tests, including web-based tests.
-        execute_from_command_line([__file__, 'collectstatic', '--noinput'])
+        execute_from_command_line([
+            __file__, 'collectstatic', '--noinput', '-v', '0',
+        ])
 
         generate_media_serial()
 

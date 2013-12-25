@@ -1,29 +1,35 @@
 var prevTypes = {},
     origRepoTypes = [];
 
-function forEachField(fields, wholeRows, func) {
-    var prefix = (wholeRows ? "#id_" : "#row-"),
-        id,
-        field;
-
-    for (id in fields) {
-        for (field in fields[id]) {
-            func($(prefix + fields[id][field]));
-        }
-    }
-}
-
-function updateFormDisplay(id, fields) {
+function updateFormDisplay(id, tools_info) {
     var type = $("#id_" + id)[0].value,
+        oldInfo = tools_info[prevTypes[id]],
+        newInfo = tools_info[type],
+        text,
+        field,
         i;
 
-    for (i in fields[prevTypes[id]]) {
-        $("#row-" + fields[prevTypes[id]][i]).hide();
+    for (i = 0; i < oldInfo.fields.length; i++) {
+        $("#row-" + oldInfo.fields[i]).hide();
     }
 
-    for (i in fields[type]) {
-        $("#row-" + fields[type][i]).show();
+    for (field in oldInfo.help_text) {
+        $("#row-" + field).find('p.help')
+            .remove();
     }
+
+    for (i = 0; i < newInfo.fields.length; i++) {
+        $("#row-" + newInfo.fields[i]).show();
+    }
+
+    for (field in newInfo.help_text) {
+        text = newInfo.help_text[field];
+
+        $("#row-" + field)
+            .append($('<p class="help"/>')
+                .text(text));
+    }
+
 
     prevTypes[id] = type;
 }
@@ -31,6 +37,8 @@ function updateFormDisplay(id, fields) {
 function updatePlanEl(rowEl, planEl, serviceType) {
     var planTypes = HOSTING_SERVICES[serviceType].plans,
         selectedPlan = planEl.val(),
+        planType,
+        opt,
         i;
 
     planEl.empty();
@@ -39,11 +47,11 @@ function updatePlanEl(rowEl, planEl, serviceType) {
         rowEl.hide();
     } else {
         for (i = 0; i < planTypes.length; i++) {
-            var planType = planTypes[i],
-                opt = $('<option/>')
-                    .val(planType.type)
-                    .text(planType.label)
-                    .appendTo(planEl);
+            planType = planTypes[i];
+            opt = $('<option/>')
+                .val(planType.type)
+                .text(planType.label)
+                .appendTo(planEl);
 
             if (planType.type === selectedPlan) {
                 opt.attr('selected', 'selected');
@@ -65,7 +73,7 @@ function updateHostingForm(hostingTypeEl, formPrefix, planEl, formsEl) {
 }
 
 function hideAllToolsFields() {
-    var fields = TOOLS_FIELDS["none"];
+    var fields = TOOLS_INFO.none.fields;
 
     for (i = 0; i < fields.length; i++) {
         $("#row-" + fields[i]).hide();
@@ -103,18 +111,27 @@ function updateRepositoryType() {
 
 $(document).ready(function() {
     var hostingTypeEl = $("#id_hosting_type"),
+        hostingURLRowEl = $("#row-hosting_url"),
+        hostingURLEl = $("#id_hosting_url"),
         hostingAccountEl = $("#id_hosting_account"),
         hostingAccountRowEl = $("#row-hosting_account"),
         hostingAccountUserRowEl = $("#row-hosting_account_username"),
         hostingAccountPassRowEl = $("#row-hosting_account_password"),
+        hostingAccountTwoFactorAuthCodeRowEl =
+            $('#row-hosting_account_two_factor_auth_code'),
         hostingAccountRelinkEl = $("<p/>")
             .text('The authentication requirements for this account has ' +
                   'changed. You will need to re-authenticate.')
             .addClass('errornote')
             .hide()
             .appendTo(hostingAccountRowEl),
+        associateSshKeyFieldsetEl =
+            $("#row-associate_ssh_key").parent("fieldset"),
+        associateSshKeyEl = $("#id_associate_ssh_key"),
+        associateSshKeyElDisabled = associateSshKeyEl[0].disabled,
         bugTrackerUseHostingEl = $("#id_bug_tracker_use_hosting"),
         bugTrackerTypeEl = $("#id_bug_tracker_type"),
+        bugTrackerHostingURLRowEl = $("#row-bug_tracker_hosting_url"),
         bugTrackerTypeRowEl = $("#row-bug_tracker_type"),
         bugTrackerPlanEl = $("#id_bug_tracker_plan"),
         bugTrackerPlanRowEl = $("#row-bug_tracker_plan"),
@@ -129,12 +146,11 @@ $(document).ready(function() {
         toolEl = $("#id_tool"),
         publicKeyPopup = $("#ssh-public-key-popup"),
         repoForms = $(".repo-form"),
-        bugTrackerForms = $(".bug-tracker-form"),
-        service_id;
+        bugTrackerForms = $(".bug-tracker-form");
 
-    prevTypes['bug_tracker_type'] = "none";
-    prevTypes['hosting_type'] = "custom";
-    prevTypes['tool'] = "none";
+    prevTypes.bug_tracker_type = "none";
+    prevTypes.hosting_type = "custom";
+    prevTypes.tool = "none";
 
     toolEl.find("option").each(function() {
         origRepoTypes.push({value: $(this).val(), text: $(this).text()});
@@ -142,8 +158,6 @@ $(document).ready(function() {
 
     bugTrackerUseHostingEl
         .change(function() {
-            var checked = this.checked;
-
             if (this.checked) {
                 bugTrackerTypeRowEl.hide();
                 bugTrackerPlanRowEl.hide();
@@ -179,45 +193,25 @@ $(document).ready(function() {
     hostingTypeEl
         .change(function() {
             var hostingType = hostingTypeEl[0].value,
-                selectedAccount;
+                isCustom = (hostingType === 'custom');
 
             updateRepositoryType();
 
-            if (hostingType === "custom") {
+            if (isCustom) {
                 repoPlanRowEl.hide();
                 repoPathRowEl.show();
                 repoMirrorPathRowEl.show();
             } else {
-                var accounts = HOSTING_SERVICES[hostingType].accounts,
-                    i;
-
                 hideAllToolsFields();
                 repoPathRowEl.hide();
                 repoMirrorPathRowEl.hide();
 
                 updatePlanEl(repoPlanRowEl, repoPlanEl, hostingType);
-
-                /* Rebuild the list of accounts. */
-                selectedAccount = parseInt(hostingAccountEl.val(), 10);
-                hostingAccountEl.find('option[value!=""]').remove();
-
-                for (i = 0; i < accounts.length; i++) {
-                    var account = accounts[i],
-                        opt = $("<option/>")
-                            .val(account.pk)
-                            .text(account.username)
-                            .data('account', account)
-                            .appendTo(hostingAccountEl);
-
-                    if (account.pk === selectedAccount) {
-                        opt.attr("selected", "selected");
-                    }
-                }
             }
 
             repoPlanEl.triggerHandler("change");
 
-            if (hostingType === "custom" ||
+            if (isCustom ||
                 !HOSTING_SERVICES[hostingType].supports_bug_trackers) {
                 bugTrackerUseHostingEl[0].disabled = true;
                 bugTrackerUseHostingEl[0].checked = false;
@@ -225,35 +219,118 @@ $(document).ready(function() {
             } else {
                 bugTrackerUseHostingEl[0].disabled = false;
             }
+
+            if (isCustom ||
+                !HOSTING_SERVICES[hostingType].supports_ssh_key_association) {
+                associateSshKeyFieldsetEl.hide();
+                associateSshKeyEl[0].disabled = true;
+                associateSshKeyEl[0].checked = false;
+            } else {
+                /*
+                 * Always use the original state of the checkbox (i.e. the
+                 * state on page load)
+                 */
+                associateSshKeyEl[0].disabled = associateSshKeyElDisabled;
+                associateSshKeyFieldsetEl.show();
+            }
+
+            if (isCustom || !HOSTING_SERVICES[hostingType].self_hosted) {
+                hostingURLRowEl.hide();
+            } else {
+                hostingURLRowEl.show();
+            }
         })
         .triggerHandler("change");
 
+    $([hostingTypeEl[0], hostingURLEl[0]])
+        .change(function() {
+            var hostingType = hostingTypeEl[0].value,
+                hostingInfo,
+                accounts,
+                foundSelected,
+                selectedAccount,
+                account,
+                opt,
+                i;
+
+            if (hostingType !== "custom") {
+                hostingInfo = HOSTING_SERVICES[hostingType];
+                accounts = hostingInfo.accounts;
+                foundSelected = false;
+
+                /* Rebuild the list of accounts. */
+                selectedAccount = parseInt(hostingAccountEl.val(), 10);
+                selectedURL = hostingURLEl.val() || null;
+                hostingAccountEl.find('option[value!=""]').remove();
+
+                if (hostingInfo.needs_two_factor_auth_code) {
+                    /*
+                     * The first one will be selected automatically, which
+                     * we want. Don't select any below.
+                     */
+                    foundSelected = true;
+                }
+
+                for (i = 0; i < accounts.length; i++) {
+                    account = accounts[i];
+
+                    if (account.hosting_url === selectedURL) {
+                        opt = $("<option/>")
+                            .val(account.pk)
+                            .text(account.username)
+                            .data('account', account)
+                            .appendTo(hostingAccountEl);
+
+                        if (account.pk === selectedAccount || !foundSelected) {
+                            opt.attr("selected", "selected");
+                            foundSelected = true;
+                            hostingAccountEl.triggerHandler('change');
+                        }
+                    }
+                }
+            }
+        });
+
     $([hostingTypeEl[0], hostingAccountEl[0]])
         .change(function() {
-            var hostingType = hostingTypeEl.val();
+            var hostingType = hostingTypeEl.val(),
+                hostingInfo,
+                selectedOption,
+                account;
 
             hostingAccountRelinkEl.hide();
+            hostingAccountTwoFactorAuthCodeRowEl.hide();
 
             if (hostingType === "custom") {
                 hostingAccountRowEl.hide();
+                hostingURLRowEl.hide();
                 hostingAccountUserRowEl.hide();
                 hostingAccountPassRowEl.hide();
             } else {
+                hostingInfo = HOSTING_SERVICES[hostingType];
+
                 hostingAccountRowEl.show();
+
+                if (hostingInfo.self_hosted) {
+                    hostingURLRowEl.show();
+                }
 
                 if (hostingAccountEl.val() === "") {
                     hostingAccountUserRowEl.show();
 
-                    if (HOSTING_SERVICES[hostingType].needs_authorization) {
+                    if (hostingInfo.needs_authorization) {
                         hostingAccountPassRowEl.show();
                     } else {
                         hostingAccountPassRowEl.hide();
                     }
+
+                    if (hostingInfo.needs_two_factor_auth_code) {
+                        hostingAccountTwoFactorAuthCodeRowEl.show();
+                    }
                 } else {
-                    var selectedOption =
-                            $(hostingAccountEl[0].options[
-                                hostingAccountEl[0].selectedIndex]),
-                        account = selectedOption.data('account');
+                    selectedOption = $(hostingAccountEl[0].options[
+                        hostingAccountEl[0].selectedIndex]);
+                    account = selectedOption.data('account');
 
                     hostingAccountUserRowEl.hide();
 
@@ -271,7 +348,7 @@ $(document).ready(function() {
     toolEl
         .change(function() {
             if (hostingTypeEl[0].value === "custom") {
-                updateFormDisplay("tool", TOOLS_FIELDS);
+                updateFormDisplay("tool", TOOLS_INFO);
             } else {
                 hideAllToolsFields();
             }
@@ -284,18 +361,27 @@ $(document).ready(function() {
 
             bugTrackerForms.hide();
 
-            if (bugTrackerType === 'custom') {
+            if (bugTrackerType === 'custom' || bugTrackerType === 'none') {
+                bugTrackerHostingURLRowEl.hide();
                 bugTrackerPlanRowEl.hide();
                 bugTrackerUsernameRowEl.hide();
+            }
+
+            if (bugTrackerType === 'custom') {
                 bugTrackerURLRowEl.show();
             } else if (bugTrackerType === 'none') {
-                bugTrackerPlanRowEl.hide();
-                bugTrackerUsernameRowEl.hide();
                 bugTrackerURLRowEl.hide();
             } else {
                 bugTrackerURLRowEl.hide();
                 updatePlanEl(bugTrackerPlanRowEl, bugTrackerPlanEl,
                              bugTrackerType);
+
+
+                if (HOSTING_SERVICES[bugTrackerType].self_hosted) {
+                    bugTrackerHostingURLRowEl.show();
+                } else {
+                    bugTrackerHostingURLRowEl.hide();
+                }
             }
         })
         .triggerHandler("change");
@@ -313,11 +399,11 @@ $(document).ready(function() {
         .triggerHandler("change");
 
     $("#show-ssh-key-link").toggle(function() {
-        $(this).text("Hide SSH Public Key");
+        $(this).text(gettext("Hide SSH Public Key"));
         publicKeyPopup.show();
         return false;
     }, function() {
-        $(this).text("Show SSH Public Key");
+        $(this).text(gettext("Show SSH Public Key"));
         publicKeyPopup.hide();
         return false;
     });

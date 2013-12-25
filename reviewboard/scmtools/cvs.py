@@ -1,15 +1,18 @@
+from __future__ import unicode_literals
+
 import os
 import re
 import tempfile
-import urlparse
 
+from djblets.util.compat import six
+from djblets.util.compat.six.moves.urllib.parse import urlparse
 from djblets.util.filesystem import is_exe_in_path
 
 from reviewboard.scmtools.core import SCMTool, HEAD, PRE_CREATION
-from reviewboard.scmtools.errors import AuthenticationError, \
-                                        SCMError, \
-                                        FileNotFoundError, \
-                                        RepositoryNotFoundError
+from reviewboard.scmtools.errors import (AuthenticationError,
+                                         SCMError,
+                                         FileNotFoundError,
+                                         RepositoryNotFoundError)
 from reviewboard.diffviewer.parser import DiffParser, DiffParserError
 from reviewboard.ssh import utils as sshutils
 from reviewboard.ssh.errors import SSHAuthenticationError, SSHError
@@ -21,6 +24,9 @@ sshutils.register_rbssh('CVS_RSH')
 class CVSTool(SCMTool):
     name = "CVS"
     supports_authentication = True
+    field_help_text = {
+        'path': 'The CVSROOT used to access the repository.',
+    }
     dependencies = {
         'executables': ['cvs'],
     }
@@ -65,8 +71,7 @@ class CVSTool(SCMTool):
                 raise SCMError("Unable to parse diff revision header "
                                "(file_str='%s', revision_str='%s')"
                                % (file_str, revision_str))
-            return file_str[:colon_idx], file_str[colon_idx+1:]
-
+            return file_str[:colon_idx], file_str[colon_idx + 1:]
 
     def get_diffs_use_absolute_paths(self):
         return True
@@ -98,8 +103,7 @@ class CVSTool(SCMTool):
 
                 if username:
                     if password:
-                        cvsroot += '%s:%s@' % (username,
-                                               password)
+                        cvsroot += '%s:%s@' % (username, password)
                     else:
                         cvsroot += '%s@' % (username)
 
@@ -134,10 +138,10 @@ class CVSTool(SCMTool):
             try:
                 sshutils.check_host(m.group('hostname'), username, password,
                                     local_site_name)
-            except SSHAuthenticationError, e:
+            except SSHAuthenticationError as e:
                 # Represent an SSHAuthenticationError as a standard
                 # AuthenticationError.
-                raise AuthenticationError(e.allowed_types, unicode(e),
+                raise AuthenticationError(e.allowed_types, six.text_type(e),
                                           e.user_key)
             except:
                 # Re-raise anything else
@@ -154,7 +158,7 @@ class CVSTool(SCMTool):
     @classmethod
     def parse_hostname(cls, path):
         """Parses a hostname from a repository path."""
-        return urlparse.urlparse(path)[1] # netloc
+        return urlparse(path)[1]  # netloc
 
 
 class CVSDiffParser(DiffParser):
@@ -279,10 +283,10 @@ class CVSClient(object):
         os.chdir(self.tempdir)
 
         p = SCMTool.popen(['cvs', '-f', '-d', self.cvsroot, 'checkout',
-                           '-r', str(revision), '-p', filename],
+                           '-r', six.text_type(revision), '-p', filename],
                           self.local_site_name)
         contents = p.stdout.read()
-        errmsg = p.stderr.read()
+        errmsg = six.text_type(p.stderr.read())
         failure = p.wait()
 
         # Unfortunately, CVS is not consistent about exiting non-zero on
@@ -302,9 +306,9 @@ class CVSClient(object):
 
         # So, if nothing is in errmsg, or errmsg has a specific recognized
         # message, call it FileNotFound.
-        if not errmsg or \
-           errmsg.startswith('cvs checkout: cannot find module') or \
-           errmsg.startswith('cvs checkout: could not read RCS file'):
+        if (not errmsg or
+                errmsg.startswith('cvs checkout: cannot find module') or
+                errmsg.startswith('cvs checkout: could not read RCS file')):
             self.cleanup()
             raise FileNotFoundError(filename, revision)
 
@@ -313,8 +317,8 @@ class CVSClient(object):
         #
         # If the .cvspass file doesn't exist, CVS will return an error message
         # stating this. This is safe to ignore.
-        if (failure and not errmsg.startswith('==========')) and \
-           not ".cvspass does not exist - creating new file" in errmsg:
+        if ((failure and not errmsg.startswith('==========')) and
+                not '.cvspass does not exist - creating new file' in errmsg):
             self.cleanup()
             raise SCMError(errmsg)
 

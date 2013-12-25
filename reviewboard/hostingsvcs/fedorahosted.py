@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django import forms
 from django.utils.translation import ugettext_lazy as _
 
@@ -24,8 +26,8 @@ class FedoraHosted(HostingService):
             'path': 'git://git.fedorahosted.org/git/'
                     '%(fedorahosted_repo_name)s.git',
             'raw_file_url': 'http://git.fedorahosted.org/cgit/'
-                            '%(fedorahosted_repo_name)s.git/tree/'
-                            '<filename>?id2=<revision>'
+                            '%(fedorahosted_repo_name)s.git/blob/'
+                            '<filename>?id=<revision>'
         },
         'Mercurial': {
             'path': 'http://hg.fedorahosted.org/hg/'
@@ -40,5 +42,5 @@ class FedoraHosted(HostingService):
                            '%(fedorahosted_repo_name)s/',
         },
     }
-    bug_tracker_field = 'https://fedorahosted.org/%(fedorahosted_repo_name)s' \
-                        '/ticket/%%s'
+    bug_tracker_field = \
+        'https://fedorahosted.org/%(fedorahosted_repo_name)s/ticket/%%s'

@@ -27,6 +27,7 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+from __future__ import unicode_literals
 
 import getpass
 import imp
@@ -34,8 +35,9 @@ import os
 import sys
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import DatabaseError
-from django.utils.translation import gettext as _
+from django.utils.translation import ugettext as _
 from djblets.util.filesystem import is_exe_in_path
 from djblets.siteconfig.models import SiteConfiguration
 
@@ -71,7 +73,7 @@ def check_updates_required():
         # Errors appear.
         try:
             siteconfig = SiteConfiguration.objects.get_current()
-        except (DatabaseError, SiteConfiguration.DoesNotExist), e:
+        except (DatabaseError, SiteConfiguration.DoesNotExist) as e:
             updates_required.append((
                 'admin/manual-updates/database-error.html', {
                     'error': e,
@@ -102,7 +104,6 @@ def check_updates_required():
                 siteconfig.set("site_media_root", new_media_root)
                 settings.STATIC_ROOT = new_media_root
 
-
         # Check if the user has any pending static media configuration
         # changes they need to make.
         if siteconfig and 'manual-updates' in siteconfig.settings:
@@ -117,7 +118,6 @@ def check_updates_required():
                     }
                 ))
 
-
         # Check if there's a media/uploaded/images directory. If not, this is
         # either a new install or is using the old-style media setup and needs
         # to be manually upgraded.
@@ -131,7 +131,6 @@ def check_updates_required():
                 }
             ))
 
-
         try:
             username = getpass.getuser()
         except ImportError:
@@ -144,8 +143,8 @@ def check_updates_required():
         data_dir = os.environ.get('HOME', '')
 
         if (not data_dir or
-            not os.path.isdir(data_dir) or
-            not os.access(data_dir, os.W_OK)):
+                not os.path.isdir(data_dir) or
+                not os.access(data_dir, os.W_OK)):
             try:
                 username = getpass.getuser()
             except ImportError:
@@ -162,7 +161,6 @@ def check_updates_required():
                     'expected_data_dir': os.path.join(site_dir, 'data'),
                 }
             ))
-
 
         # Check if the htdocs/media/ext directory is writable by us.
         ext_dir = settings.EXTENSIONS_STATIC_ROOT
@@ -190,14 +188,11 @@ def check_updates_required():
                 }
             ))
 
-
         #
         # NOTE: Add new checks above this.
         #
 
-
         _install_fine = not updates_required
-
 
     return updates_required
 
@@ -221,8 +216,10 @@ def get_can_enable_search():
         return (False, _(
             'PyLucene (with JCC) is required to enable search. See the '
             '<a href="%(url)s">documentation</a> for instructions.'
-        ) % {'url': 'http://www.reviewboard.org/docs/manual/dev/admin/'
-                    'sites/enabling-search/'})
+        ) % {
+            'url': 'http://www.reviewboard.org/docs/manual/dev/admin/'
+                   'installation/linux/#installing-pylucene'
+        })
 
 
 def get_can_enable_syntax_highlighting():
@@ -271,14 +268,16 @@ def get_can_enable_dns():
         return (False, _(
             'PyDNS, which is required to find the domain controller, '
             'is not installed.'
-            ))
+        ))
 
 
 def get_can_use_amazon_s3():
     """Checks whether django-storages (with the Amazon S3 backend) is installed."""
     try:
-        from storages.backends.s3 import S3Storage
+        from storages.backends.s3boto import S3BotoStorage
         return (True, None)
+    except ImproperlyConfigured as e:
+        return (False, _('Amazon S3 backend failed to load: %s') % e)
     except ImportError:
         return (False, _(
             'Amazon S3 depends on django-storages, which is not installed'

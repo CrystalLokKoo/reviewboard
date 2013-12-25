@@ -1,16 +1,19 @@
+from __future__ import unicode_literals
+
+
 # The version of Review Board.
 #
 # This is in the format of:
 #
 #   (Major, Minor, Micro, Patch, alpha/beta/rc/final, Release Number, Released)
 #
-VERSION = (1, 7, 0, 0, 'beta', 3, False)
+VERSION = (2, 0, 0, 0, 'beta', 2, False)
 
 
 def get_version_string():
     version = '%s.%s' % (VERSION[0], VERSION[1])
 
-    if VERSION[2]:
+    if VERSION[2] or VERSION[3]:
         version += ".%s" % VERSION[2]
 
     if VERSION[3]:
@@ -31,7 +34,7 @@ def get_version_string():
 def get_package_version():
     version = '%s.%s' % (VERSION[0], VERSION[1])
 
-    if VERSION[2]:
+    if VERSION[2] or VERSION[3]:
         version += ".%s" % VERSION[2]
 
     if VERSION[3]:
@@ -58,10 +61,17 @@ def initialize():
     import logging
     import os
 
+    import settings_local
+
+    # Set RBSITE_PYTHON_PATH to the path we need for any RB-bundled
+    # scripts we may call.
+    os.environ['RBSITE_PYTHONPATH'] = \
+        os.path.dirname(settings_local.__file__)
+
     from django.conf import settings
     from django.db import DatabaseError
-    from djblets.util.misc import generate_ajax_serial
     from djblets import log
+    from djblets.cache.serials import generate_ajax_serial
 
     from reviewboard import signals
     from reviewboard.extensions.base import get_extension_manager

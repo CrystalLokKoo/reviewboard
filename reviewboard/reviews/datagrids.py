@@ -1,44 +1,47 @@
+from __future__ import unicode_literals
+
 import pytz
 import logging
 
 from django.contrib.auth.models import User
-from django.contrib.staticfiles.templatetags.staticfiles import static
 from django.http import Http404
 from django.template.defaultfilters import date
 from django.utils.datastructures import SortedDict
 from django.utils.html import conditional_escape
 from django.utils.translation import ugettext_lazy as _
 from djblets.datagrid.grids import Column, DateTimeColumn, DataGrid
+from djblets.util.compat import six
 from djblets.util.templatetags.djblets_utils import ageid
 
-from reviewboard.accounts.models import Profile
+from reviewboard.accounts.models import Profile, LocalSiteProfile
 from reviewboard.reviews.models import Group, ReviewRequest
 from reviewboard.reviews.templatetags.reviewtags import render_star
 from reviewboard.site.urlresolvers import local_site_reverse
 
 
 class DateTimeSinceColumn(DateTimeColumn):
-    """A column that displays how long it has been since a date/time.
+    """Displays how long it has been since a given date/time.
 
     These columns will dynamically update as the page is shown, so that the
     number of minutes, hours, days, etc. ago is correct.
     """
     def render_data(self, obj):
-        return u'<time class="timesince" datetime="%s">%s</time>' % (
+        return '<time class="timesince" datetime="%s">%s</time>' % (
             date(getattr(obj, self.field_name), 'c'),
             super(DateTimeSinceColumn, self).render_data(obj))
 
 
 class StarColumn(Column):
-    """
-    A column used to indicate whether the object is "starred" or watched.
-    The star is interactive, allowing the user to star or unstar the object.
+    """Indicates if an item is starred.
+
+    This is the base class for all columns that deal with starring items.
+
+    The star is interactive, allowing the user to star or unstar the item.
     """
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
-        self.image_url = static("rb/images/star_on.png")
-        self.image_width = 16
-        self.image_height = 15
+        super(StarColumn, self).__init__(*args, **kwargs)
+
+        self.image_class = 'rb-icon rb-icon-star-on'
         self.image_alt = _("Starred")
         self.detailed_label = _("Starred")
         self.shrink = True
@@ -50,9 +53,9 @@ class StarColumn(Column):
 
 
 class ReviewGroupStarColumn(StarColumn):
-    """
-    A specialization of StarColumn that augments the SQL query to include
-    the starred calculation for review groups.
+    """Indicates if a review group is starred.
+
+    The star is interactive, allowing the user to star or unstar the group.
     """
     def augment_queryset(self, queryset):
         user = self.datagrid.request.user
@@ -77,9 +80,10 @@ class ReviewGroupStarColumn(StarColumn):
 
 
 class ReviewRequestStarColumn(StarColumn):
-    """
-    A specialization of StarColumn that augments the SQL query to include
-    the starred calculation for review requests.
+    """Indicates if a review request is starred.
+
+    The star is interactive, allowing the user to star or unstar the
+    review request.
     """
     def augment_queryset(self, queryset):
         user = self.datagrid.request.user
@@ -104,15 +108,11 @@ class ReviewRequestStarColumn(StarColumn):
 
 
 class ShipItColumn(Column):
-    """
-    A column used to indicate whether someone has marked this review request
-    as "Ship It!"
-    """
+    """Shows the "Ship It" count for a review request."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
-        self.image_url = static("rb/images/shipit.png")
-        self.image_width = 16
-        self.image_height = 16
+        super(ShipItColumn, self).__init__(*args, **kwargs)
+
+        self.image_class = 'rb-icon rb-icon-shipit'
         self.image_alt = _("Ship It!")
         self.detailed_label = _("Ship It!")
         self.db_field = "shipit_count"
@@ -121,32 +121,28 @@ class ShipItColumn(Column):
 
     def render_data(self, review_request):
         if review_request.shipit_count > 0:
-            return u'<span class="shipit-count">' \
-                    u'<img src="%s" width="9" height="8" alt="%s" ' \
-                         u'title="%s" /> %s' \
-                   u'</span>' % \
-                (static("rb/images/shipit_checkmark.png"),
-                 self.image_alt, self.image_alt, review_request.shipit_count)
+            return '<span class="shipit-count">' \
+                   ' <div class="rb-icon rb-icon-shipit-checkmark"' \
+                   '      title="%s"></div> %s' \
+                   '</span>' % \
+                (self.image_alt, review_request.shipit_count)
 
         return ""
 
 
 class MyCommentsColumn(Column):
-    """
-    A column meant to represent the status of the logged-in user's
-    comments on the review.
-    """
+    """Shows if the current user has reviewed the review request."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
-        self.image_url = static("rb/images/comment-draft-small.png")
-        self.image_width = 16
-        self.image_height = 16
+        super(MyCommentsColumn, self).__init__(*args, **kwargs)
+
+        self.image_class = 'rb-icon rb-icon-datagrid-comment-draft'
         self.image_alt = _("My Comments")
         self.detailed_label = _("My Comments")
         self.shrink = True
 
         # XXX It'd be nice to be able to sort on this, but datagrids currently
-        # can only sort based on stored (in the DB) values, not computed values.
+        # can only sort based on stored (in the DB) values, not computed
+        # values.
 
     def augment_queryset(self, queryset):
         user = self.datagrid.request.user
@@ -155,7 +151,7 @@ class MyCommentsColumn(Column):
             return queryset
 
         query_dict = {
-            'user_id': str(user.id),
+            'user_id': six.text_type(user.id),
         }
 
         return queryset.extra(select={
@@ -190,83 +186,80 @@ class MyCommentsColumn(Column):
         if user.is_anonymous() or review_request.mycomments_my_reviews == 0:
             return ""
 
-        image_url = None
-        image_alt = None
-
         # Priority is ranked in the following order:
         #
         # 1) Non-public (draft) reviews
         # 2) Public reviews marked "Ship It"
         # 3) Public reviews not marked "Ship It"
         if review_request.mycomments_private_reviews > 0:
-            image_url = self.image_url
+            icon_class = 'rb-icon-datagrid-comment-draft'
             image_alt = _("Comments drafted")
         else:
             if review_request.mycomments_shipit_reviews > 0:
-                image_url = static("rb/images/comment-shipit-small.png")
+                icon_class = 'rb-icon-datagrid-comment-shipit'
                 image_alt = _("Comments published. Ship it!")
             else:
-                image_url = static("rb/images/comment-small.png")
+                icon_class = 'rb-icon-datagrid-comment'
                 image_alt = _("Comments published")
 
-        return u'<img src="%s" width="%s" height="%s" alt="%s" ' \
-               u'title="%s" />' % \
-                (image_url, self.image_width, self.image_height,
-                 image_alt, image_alt)
+        return '<div class="rb-icon %s" title="%s"></div>' % \
+               (icon_class, image_alt)
 
 
 class ToMeColumn(Column):
-    """
-    A column used to indicate whether the current logged-in user is targeted
-    by the review request.
+    """Indicates if the user is requested to review the change.
+
+    This will show an indicator if the user is on the Target People reviewers
+    list.
     """
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
-        self.label = u"\u00BB"  # this is &raquo;
-        self.detailed_label = u"\u00BB To Me"
+        super(ToMeColumn, self).__init__(*args, **kwargs)
+
+        self.label = "\u00BB"  # this is &raquo;
+        self.detailed_label = "\u00BB To Me"
         self.shrink = True
 
     def render_data(self, review_request):
         user = self.datagrid.request.user
         if (user.is_authenticated() and
             review_request.target_people.filter(pk=user.pk).exists()):
-            return u'<div title="%s"><b>&raquo;</b></div>' % \
-                     (self.detailed_label)
+            return ('<div title="%s"><b>&raquo;</b></div>'
+                    % (self.detailed_label))
 
         return ""
 
 
 class NewUpdatesColumn(Column):
-    """
-    A column used to indicate whether the review request has any new updates
-    since the user last saw it.
+    """Indicates if there are new updates on a review request.
+
+    This will show an icon if the review request has had any new updates
+    or reviews since the user last saw it.
     """
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
-        self.image_url = static("rb/images/convo.png")
-        self.image_width = 18
-        self.image_height = 16
+        super(NewUpdatesColumn, self).__init__(*args, **kwargs)
+
+        self.image_class = 'rb-icon rb-icon-datagrid-new-updates'
         self.image_alt = "New Updates"
         self.detailed_label = "New Updates"
         self.shrink = True
 
     def render_data(self, review_request):
         if review_request.new_review_count > 0:
-            return u'<img src="%s" width="%s" height="%s" alt="%s" ' \
-                    u'title="%s" />' % \
-                (self.image_url, self.image_width, self.image_height,
-                 self.image_alt, self.image_alt)
+            return '<div class="%s" title="%s" />' % \
+                   (self.image_class, self.image_alt)
 
         return ""
 
 
 class SummaryColumn(Column):
-    """
-    A column used to display a summary of the review request, along with
-    labels indicating if it's a draft or if it's submitted.
+    """Shows the summary of a review request.
+
+    This will also prepend the draft/submitted/discarded state, if any,
+    to the summary.
     """
     def __init__(self, label=_("Summary"), *args, **kwargs):
-        Column.__init__(self, label=label, *args, **kwargs)
+        super(SummaryColumn, self).__init__(label=label, *args, **kwargs)
+
         self.sortable = True
 
     def augment_queryset(self, queryset):
@@ -295,7 +288,7 @@ class SummaryColumn(Column):
 
             if review_request.draft_summary is not None:
                 summary = conditional_escape(review_request.draft_summary)
-                labels.update({_('Draft'):  'label-draft'})
+                labels.update({_('Draft'): 'label-draft'})
             elif (not review_request.public and
                   review_request.status == ReviewRequest.PENDING_REVIEW):
                 labels.update({_('Draft'): 'label-draft'})
@@ -308,49 +301,58 @@ class SummaryColumn(Column):
         display_data = ''
 
         for label in labels:
-           display_data += u'<span class="%s">[%s] </span>' % (
-               labels[label], label)
-        display_data += u'%s' % summary
+            display_data += '<span class="%s">[%s] </span>' % (
+                labels[label], label)
+        display_data += summary
         return display_data
 
 
 class SubmitterColumn(Column):
+    """Shows the username of the user who submitted the review request."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, _("Submitter"), db_field="submitter__username",
-                        shrink=True, sortable=True, link=True,
-                        *args, **kwargs)
+        super(SubmitterColumn, self).__init__(
+            _("Submitter"), db_field="submitter__username",
+            shrink=True, sortable=True, link=True, *args, **kwargs)
 
     def augment_queryset(self, queryset):
         return queryset.select_related('submitter')
 
 
 class RepositoryColumn(Column):
+    """Shows the name of the repository the review request's change is on."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, _("Repository"), db_field="repository__name",
-                        shrink=True, sortable=True, link=False,
-                        css_class='repository-column',
-                        *args, **kwargs)
+        super(RepositoryColumn, self).__init__(
+            _("Repository"), db_field="repository__name",
+            shrink=True, sortable=True, link=False,
+            css_class='repository-column', *args, **kwargs)
 
     def augment_queryset(self, queryset):
         return queryset.select_related('repository')
 
+    def render_data(self, obj):
+        return super(RepositoryColumn, self).render_data(obj) or ''
+
 
 class PendingCountColumn(Column):
-    """
-    A column used to show the pending number of review requests for a
-    group or user.
+    """Shows the pending number of review requests for a user or group.
+
+    This will show the pending number of review requests for the given
+    review group or user. It only applies to group or user lists.
     """
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
+        super(PendingCountColumn, self).__init__(*args, **kwargs)
 
     def render_data(self, obj):
-        return str(getattr(obj, self.field_name).filter(public=True,
-                                                        status='P').count())
+        return six.text_type(
+            getattr(obj, self.field_name).filter(
+                public=True, status='P').count())
 
 
 class PeopleColumn(Column):
+    """Shows the list of people requested to review the review request."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
+        super(PeopleColumn, self).__init__(*args, **kwargs)
+
         self.label = _("People")
         self.detailed_label = _("Target People")
         self.sortable = False
@@ -362,8 +364,10 @@ class PeopleColumn(Column):
 
 
 class GroupsColumn(Column):
+    """Shows the list of groups requested to review the review request."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
+        super(GroupsColumn, self).__init__(*args, **kwargs)
+
         self.label = _("Groups")
         self.detailed_label = _("Target Groups")
         self.sortable = False
@@ -375,16 +379,15 @@ class GroupsColumn(Column):
 
 
 class GroupMemberCountColumn(Column):
-    """
-    A column used to show the number of users that registered for a group.
-    """
+    """Shows the number of users that are part of a review group."""
     def __init__(self, *args, **kwargs):
-        Column.__init__(self, *args, **kwargs)
+        super(GroupMemberCountColumn, self).__init__(*args, **kwargs)
+
         self.link = True
         self.link_func = self.link_to_object
 
     def render_data(self, group):
-        return str(group.users.count())
+        return six.text_type(group.users.count())
 
     def link_to_object(self, group, value):
         return local_site_reverse('group_members',
@@ -393,20 +396,20 @@ class GroupMemberCountColumn(Column):
 
 
 class ReviewCountColumn(Column):
-    """
-    A column showing the number of reviews for a review request.
-    """
+    """Shows the number of published reviews for a review request."""
     def __init__(self, label=_("Reviews"),
                  detailed_label=_("Number of Reviews"),
                  *args, **kwargs):
-        Column.__init__(self, label=label, detailed_label=detailed_label,
-                        *kwargs, **kwargs)
+        super(ReviewCountColumn, self).__init__(label=label,
+                                                detailed_label=detailed_label,
+                                                *kwargs, **kwargs)
+
         self.shrink = True
         self.link = True
         self.link_func = self.link_to_object
 
     def render_data(self, review_request):
-        return str(review_request.publicreviewcount_count)
+        return six.text_type(review_request.publicreviewcount_count)
 
     def augment_queryset(self, queryset):
         return queryset.extra(select={
@@ -425,7 +428,7 @@ class ReviewCountColumn(Column):
 
 
 class DiffUpdatedColumn(DateTimeColumn):
-    """A column indicating the date and time the diff was last updated."""
+    """Shows the date/time that the diff was last updated."""
     def __init__(self, *args, **kwargs):
         super(DiffUpdatedColumn, self).__init__(
             _("Diff Updated"),
@@ -447,7 +450,7 @@ class DiffUpdatedColumn(DateTimeColumn):
 
 
 class DiffUpdatedSinceColumn(DateTimeSinceColumn):
-    """A column indicating the elapsed time since the diff was last updated."""
+    """Shows the elapsed time since the diff was last updated."""
     def __init__(self, *args, **kwargs):
         super(DiffUpdatedSinceColumn, self).__init__(
             _("Diff Updated"),
@@ -481,6 +484,11 @@ class LastUpdatedByColumn(Column):
 
 
 class BugsColumn(Column):
+    """Shows the list of bugs specified on a review request.
+
+    The list of bugs will be linked to the bug tracker, if a bug tracker
+    was configured for the repository the review request's change is on.
+    """
     def __init__(self, *args, **kwargs):
         super(BugsColumn, self).__init__(_("Bugs"), link=False, shrink=True,
                                          sortable=False, css_class="bugs",
@@ -506,27 +514,28 @@ class BugsColumn(Column):
 
 
 class ReviewRequestDataGrid(DataGrid):
-    """
-    A datagrid that displays a list of review requests.
+    """A datagrid that displays a list of review requests.
 
     This datagrid accepts the show_submitted parameter in the URL, allowing
     submitted review requests to be filtered out or displayed.
     """
-    my_comments  = MyCommentsColumn()
-    star         = ReviewRequestStarColumn()
-    ship_it      = ShipItColumn()
-    summary      = SummaryColumn(expand=True, link=True, css_class="summary")
-    submitter    = SubmitterColumn()
+    my_comments = MyCommentsColumn()
+    star = ReviewRequestStarColumn()
+    ship_it = ShipItColumn()
+    summary = SummaryColumn(expand=True, link=True, css_class="summary")
+    submitter = SubmitterColumn()
 
-    branch       = Column(_("Branch"), db_field="branch",
-                          shrink=True, sortable=True, link=False)
-    bugs_closed  = BugsColumn()
-    repository   = RepositoryColumn()
-    time_added   = DateTimeColumn(_("Posted"),
+    branch = Column(_("Branch"), db_field="branch",
+                    shrink=True, sortable=True, link=False)
+    bugs_closed = BugsColumn()
+    repository = RepositoryColumn()
+    time_added = DateTimeColumn(
+        _("Posted"),
         detailed_label=_("Posted Time"),
         format="F jS, Y, P", shrink=True,
         css_class=lambda r: ageid(r.time_added))
-    last_updated = DateTimeColumn(_("Last Updated"),
+    last_updated = DateTimeColumn(
+        _("Last Updated"),
         format="F jS, Y, P", shrink=True,
         db_field="last_updated",
         field_name="last_updated",
@@ -535,11 +544,13 @@ class ReviewRequestDataGrid(DataGrid):
     diff_updated = DiffUpdatedColumn(
         format="F jS, Y, P", shrink=True,
         css_class=lambda r: ageid(r.diffset_history.last_diff_updated))
-    time_added_since = DateTimeSinceColumn(_("Posted"),
+    time_added_since = DateTimeSinceColumn(
+        _("Posted"),
         detailed_label=_("Posted Time (Relative)"),
         field_name="time_added", shrink=True,
         css_class=lambda r: ageid(r.time_added))
-    last_updated_since = DateTimeSinceColumn(_("Last Updated"),
+    last_updated_since = DateTimeSinceColumn(
+        _("Last Updated"),
         detailed_label=_("Last Updated (Relative)"), shrink=True,
         db_field="last_updated",
         field_name="last_updated",
@@ -570,7 +581,8 @@ class ReviewRequestDataGrid(DataGrid):
                                 field_name=review_id_field,
                                 shrink=True, sortable=True, link=True)
 
-        DataGrid.__init__(self, *args, **kwargs)
+        super(ReviewRequestDataGrid, self).__init__(*args, **kwargs)
+
         self.listview_template = 'reviews/review_request_listview.html'
         self.profile_sort_field = 'sort_review_request_columns'
         self.profile_columns_field = 'review_request_columns'
@@ -584,7 +596,8 @@ class ReviewRequestDataGrid(DataGrid):
         # Add local timezone info to the columns
         user = self.request.user
         if user.is_authenticated():
-            self.timezone = pytz.timezone(user.get_profile().timezone)
+            profile, is_new = Profile.objects.get_or_create(user=user)
+            self.timezone = pytz.timezone(profile.timezone)
             self.time_added.timezone = self.timezone
             self.last_updated.timezone = self.timezone
             self.diff_updated.timezone = self.timezone
@@ -594,9 +607,10 @@ class ReviewRequestDataGrid(DataGrid):
             self.show_submitted = profile.show_submitted
 
         try:
-            self.show_submitted = \
+            self.show_submitted = (
                 int(self.request.GET.get('show_submitted',
-                                     self.show_submitted)) != 0
+                                         self.show_submitted))
+                != 0)
         except ValueError:
             # do nothing
             pass
@@ -630,17 +644,19 @@ class ReviewRequestDataGrid(DataGrid):
 
 
 class DashboardDataGrid(ReviewRequestDataGrid):
-    """
-    A version of the ReviewRequestDataGrid that displays additional fields
-    useful in the dashboard. It also displays a different set of data
-    depending on the view that was passed.
+    """Displays the dashboard.
+
+    The dashboard is the main place where users see what review requests
+    are out there that may need their attention.
     """
     new_updates = NewUpdatesColumn()
     my_comments = MyCommentsColumn()
 
     def __init__(self, *args, **kwargs):
-        local_site = kwargs.pop('local_site', None)
-        ReviewRequestDataGrid.__init__(self, *args, **kwargs)
+        local_site = kwargs.get('local_site', None)
+
+        super(DashboardDataGrid, self).__init__(*args, **kwargs)
+
         self.listview_template = 'datagrid/listview.html'
         self.profile_sort_field = 'sort_dashboard_columns'
         self.profile_columns_field = 'dashboard_columns'
@@ -667,66 +683,60 @@ class DashboardDataGrid(ReviewRequestDataGrid):
         self.local_site = local_site
 
     def load_extra_state(self, profile):
-        group = self.request.GET.get('group', '')
+        group_name = self.request.GET.get('group', '')
         view = self.request.GET.get('view', self.default_view)
         user = self.request.user
 
         if view == 'outgoing':
             self.queryset = ReviewRequest.objects.from_user(
                 user, user, local_site=self.local_site)
-            self.title = _(u"All Outgoing Review Requests")
+            self.title = _("All Outgoing Review Requests")
         elif view == 'mine':
             self.queryset = ReviewRequest.objects.from_user(
                 user, user, None, local_site=self.local_site)
-            self.title = _(u"All My Review Requests")
+            self.title = _("All My Review Requests")
         elif view == 'to-me':
             self.queryset = ReviewRequest.objects.to_user_directly(
                 user, user, local_site=self.local_site)
-            self.title = _(u"Incoming Review Requests to Me")
+            self.title = _("Incoming Review Requests to Me")
         elif view == 'to-group':
-            if group != "":
+            if group_name:
                 # to-group is special because we want to make sure that the
                 # group exists and show a 404 if it doesn't. Otherwise, we'll
                 # show an empty datagrid with the name.
-                has_groups = Group.objects.filter(
-                    name=group,
-                    local_site=self.local_site).exists()
-
-                if not has_groups:
+                try:
+                    group = user.review_groups.get(name=group_name,
+                                                   local_site=self.local_site)
+                except Group.DoesNotExist:
                     raise Http404
 
                 self.queryset = ReviewRequest.objects.to_group(
-                    group, self.local_site, user)
-                self.title = _(u"Incoming Review Requests to %s") % group
+                    group_name, self.local_site, user)
+                self.title = _("Incoming Review Requests to %s") % group_name
             else:
                 self.queryset = ReviewRequest.objects.to_user_groups(
                     user, user, local_site=self.local_site)
-                self.title = _(u"All Incoming Review Requests to My Groups")
+                self.title = _("All Incoming Review Requests to My Groups")
         elif view == 'starred':
-            profile = user.get_profile()
+            profile, is_new = Profile.objects.get_or_create(user=user)
             self.queryset = profile.starred_review_requests.public(
-                user, local_site=self.local_site)
-            self.title = _(u"Starred Review Requests")
+                user=user, local_site=self.local_site, status=None)
+            self.title = _("Starred Review Requests")
         elif view == 'incoming':
             self.queryset = ReviewRequest.objects.to_user(
                 user, user, local_site=self.local_site)
-            self.title = _(u"All Incoming Review Requests")
+            self.title = _("All Incoming Review Requests")
         else:
             raise Http404
-
-        # Pre-load all querysets for the sidebar.
-        self.counts = get_sidebar_counts(user, self.local_site)
 
         return False
 
 
 class SubmitterDataGrid(DataGrid):
-    """
-    A datagrid showing a list of submitters.
-    """
-    username      = Column(_("Username"), link=True, sortable=True)
-    fullname      = Column(_("Full Name"), field_name="get_full_name",
-                           link=True, expand=True)
+    """A datagrid showing a list of users registered on Review Board."""
+    username = Column(_("Username"), link=True, sortable=True)
+    fullname = Column(_("Full Name"), field_name="get_full_name",
+                      link=True, expand=True)
     pending_count = PendingCountColumn(_("Pending Reviews"),
                                        field_name="directed_review_requests",
                                        shrink=True)
@@ -740,7 +750,8 @@ class SubmitterDataGrid(DataGrid):
         else:
             qs = queryset
 
-        DataGrid.__init__(self, request, qs, title)
+        super(SubmitterDataGrid, self).__init__(request, qs, title)
+
         self.default_sort = ["username"]
         self.profile_sort_field = 'sort_submitter_columns'
         self.profile_columns_field = 'submitter_columns'
@@ -754,27 +765,27 @@ class SubmitterDataGrid(DataGrid):
 
 
 class GroupDataGrid(DataGrid):
-    """
-    A datagrid showing a list of review groups.
-    """
-    star          = ReviewGroupStarColumn()
-    name          = Column(_("Group ID"), link=True, sortable=True)
-    displayname   = Column(_("Group Name"), field_name="display_name",
-                           link=True, expand=True)
+    """A datagrid showing a list of review groups accessible by the user."""
+    star = ReviewGroupStarColumn()
+    name = Column(_("Group ID"), link=True, sortable=True)
+    displayname = Column(_("Group Name"), field_name="display_name",
+                         link=True, expand=True)
     pending_count = PendingCountColumn(_("Pending Reviews"),
                                        field_name="review_requests",
                                        link=True,
                                        shrink=True)
-    member_count  = GroupMemberCountColumn(_("Members"),
-                                           field_name="members",
-                                           shrink=True)
+    member_count = GroupMemberCountColumn(_("Members"),
+                                          field_name="members",
+                                          shrink=True)
 
     def __init__(self, request, title=_("All groups"), *args, **kwargs):
         local_site = kwargs.pop('local_site', None)
-        queryset = Group.objects.accessible(request.user, local_site=local_site)
+        queryset = Group.objects.accessible(request.user,
+                                            local_site=local_site)
 
-        DataGrid.__init__(self, request, queryset=queryset, title=title,
-                          *args, **kwargs)
+        super(GroupDataGrid, self).__init__(request, queryset=queryset,
+                                            title=title, *args, **kwargs)
+
         self.profile_sort_field = 'sort_group_columns'
         self.profile_columns_field = 'group_columns'
         self.default_sort = ["name"]
@@ -788,22 +799,18 @@ class GroupDataGrid(DataGrid):
 
 
 class WatchedGroupDataGrid(GroupDataGrid):
-    """
-    A special version of GroupDataGrid that shows a list of watched groups,
-    linking to a dashboard view of them. This is meant for display in the
-    dashboard.
-    """
+    """Shows the list of review groups watched by the user."""
     def __init__(self, request, title=_("Watched groups"), *args, **kwargs):
         local_site = kwargs.pop('local_site', None)
-        GroupDataGrid.__init__(self, request, title=title, *args, **kwargs)
+
+        super(WatchedGroupDataGrid, self).__init__(request, title=title,
+                                                   *args, **kwargs)
+
         user = request.user
-        profile = user.get_profile()
+        profile, is_new = Profile.objects.get_or_create(user=user)
 
         self.queryset = profile.starred_groups.all()
         self.queryset = self.queryset.filter(local_site=local_site)
-
-        # Pre-load all querysets for the sidebar.
-        self.counts = get_sidebar_counts(user, local_site)
 
     def link_to_object(self, group, value):
         return ".?view=to-group&group=%s" % group.name
@@ -811,9 +818,9 @@ class WatchedGroupDataGrid(GroupDataGrid):
 
 def get_sidebar_counts(user, local_site):
     """Returns counts used for the Dashboard sidebar."""
-    profile = user.get_profile()
+    profile, is_new = Profile.objects.get_or_create(user=user)
 
-    site_profile, is_new = user.get_profile().site_profiles.get_or_create(
+    site_profile, is_new = LocalSiteProfile.objects.get_or_create(
         local_site=local_site,
         user=user,
         profile=profile)
@@ -836,7 +843,7 @@ def get_sidebar_counts(user, local_site):
         counts['groups'][group.name] = group.incoming_request_count
 
     for group in Group.objects.filter(
-            starred_by=user, local_site=local_site).order_by('name'):
+            starred_by=profile, local_site=local_site).order_by('name'):
         counts['starred_groups'][group.name] = group.incoming_request_count
 
     return counts

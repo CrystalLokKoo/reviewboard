@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import os
 import re
 import subprocess
@@ -14,11 +16,29 @@ if (sys.platform.startswith('win') or sys.platform.startswith('cygwin')):
 else:
     import posixpath as cpath
 
+# This is a workaround for buggy Python 2.7.x and Windows 7.
+# A console window would pop up every time popen is invoked unless shell=true.
+# Original issue was described at http://reviews.reviewboard.org/r/3804/
+# Note:
+#   - later versions of Windows may probably be impacted too
+#   - Python 2.7.x is the only one known to get this issue
+import platform
+
+if (sys.version_info[:2] == (2, 7) and
+    platform.system() == "Windows" and
+    platform.release() == "7"):
+    _popen_shell = True
+else:
+    _popen_shell = False
+
 
 class ClearCaseTool(SCMTool):
     name = 'ClearCase'
     uses_atomic_revisions = False
     supports_authentication = False
+    field_help_text = {
+        'path': 'The absolute path to the VOB.',
+    }
     dependencies = {
         'executables': ['cleartool'],
     }
@@ -136,7 +156,8 @@ class ClearCaseTool(SCMTool):
             cmdline,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=repopath)
+            cwd=repopath,
+            shell=_popen_shell)
 
         (res, error) = p.communicate()
         failure = p.poll()
@@ -160,7 +181,8 @@ class ClearCaseTool(SCMTool):
             cmdline,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=self.repopath)
+            cwd=self.repopath,
+            shell=_popen_shell)
 
         (res, error) = p.communicate()
         failure = p.poll()
@@ -176,7 +198,8 @@ class ClearCaseTool(SCMTool):
             cmdline,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=self.repopath)
+            cwd=self.repopath,
+            shell=_popen_shell)
 
         (res, error) = p.communicate()
         failure = p.poll()
@@ -184,7 +207,7 @@ class ClearCaseTool(SCMTool):
         if failure:
             raise SCMError(error)
 
-        for line  in res.splitlines(True):
+        for line in res.splitlines(True):
             if line.startswith('Vob family uuid:'):
                 return line.split(' ')[-1].rstrip()
 
@@ -196,7 +219,8 @@ class ClearCaseTool(SCMTool):
             cmdline,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=self.repopath)
+            cwd=self.repopath,
+            shell=_popen_shell)
 
         (res, error) = p.communicate()
         failure = p.poll()
@@ -246,7 +270,7 @@ class ClearCaseTool(SCMTool):
         if extended_path.endswith(os.path.join(os.sep, 'main', '0')):
             revision = PRE_CREATION
         elif (extended_path.endswith('CHECKEDOUT')
-            or not '@@' in extended_path):
+              or not '@@' in extended_path):
             revision = HEAD
         else:
             revision = extended_path.rsplit('@@', 1)[1]
@@ -313,7 +337,8 @@ class ClearCaseDiffParser(DiffParser):
             cmdline,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=self.repopath)
+            cwd=self.repopath,
+            shell=_popen_shell)
 
         (res, error) = p.communicate()
         failure = p.poll()
@@ -327,21 +352,21 @@ class ClearCaseDiffParser(DiffParser):
 
         return ClearCaseTool.relpath(res, self.repopath)
 
+
 class ClearCaseDynamicViewClient(object):
     def __init__(self, path):
         self.path = path
 
     def cat_file(self, filename, revision):
-        f = open(filename, 'r')
-        lines = f.readlines()
-        f.close()
-        return ''.join(lines)
+        with open(filename, 'rb') as f:
+            return f.read()
 
     def list_dir(self, path, revision):
         return ''.join([
             '%s\n' % s
             for s in sorted(os.listdir(path))
         ])
+
 
 class ClearCaseSnapshotViewClient(object):
     def __init__(self, path):
@@ -358,7 +383,8 @@ class ClearCaseSnapshotViewClient(object):
         p = subprocess.Popen(
             cmdline,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
+            stderr=subprocess.PIPE,
+            shell=_popen_shell)
 
         (res, error) = p.communicate()
         failure = p.poll()
@@ -367,9 +393,7 @@ class ClearCaseSnapshotViewClient(object):
             raise FileNotFoundError(extended_path, revision)
 
         try:
-            fp = open(temp.name, 'r')
-            data = fp.read()
-            fp.close()
-            return data
+            with open(temp.name, 'rb') as f:
+                return f.read()
         except:
             raise FileNotFoundError(extended_path, revision)

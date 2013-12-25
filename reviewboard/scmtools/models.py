@@ -1,62 +1,78 @@
+from __future__ import unicode_literals
+
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models
+from django.utils.encoding import python_2_unicode_compatible
+from django.utils.http import urlquote
 from django.utils.translation import ugettext_lazy as _
-from djblets.util.fields import JSONField
+from djblets.cache.backend import cache_memoize, make_cache_key
+from djblets.db.fields import JSONField
+from djblets.log import log_timed
 
 from reviewboard.hostingsvcs.models import HostingServiceAccount
 from reviewboard.scmtools.managers import RepositoryManager, ToolManager
+from reviewboard.scmtools.signals import (checked_file_exists,
+                                          checking_file_exists,
+                                          fetched_file, fetching_file)
 from reviewboard.site.models import LocalSite
 
 
+@python_2_unicode_compatible
 class Tool(models.Model):
     name = models.CharField(max_length=32, unique=True)
     class_name = models.CharField(max_length=128, unique=True)
 
     objects = ToolManager()
 
+    # Templates can't access variables on a class properly. It'll attempt to
+    # instantiate the class, which will fail without the necessary parameters.
+    # So, we use these as convenient wrappers to do what the template can't do.
     supports_authentication = property(
-        lambda x: x.get_scmtool_class().supports_authentication)
+        lambda x: x.scmtool_class.supports_authentication)
     supports_raw_file_urls = property(
-        lambda x: x.get_scmtool_class().supports_raw_file_urls)
+        lambda x: x.scmtool_class.supports_raw_file_urls)
+    supports_ticket_auth = property(
+        lambda x: x.scmtool_class.supports_ticket_auth)
+    supports_pending_changesets = property(
+        lambda x: x.scmtool_class.supports_pending_changesets)
+    field_help_text = property(
+        lambda x: x.scmtool_class.field_help_text)
 
-    def __unicode__(self):
+    def __str__(self):
         return self.name
 
     def get_scmtool_class(self):
-        path = self.class_name
-        i = path.rfind('.')
-        module, attr = path[:i], path[i+1:]
+        if not hasattr(self, '_scmtool_class'):
+            path = self.class_name
+            i = path.rfind('.')
+            module, attr = path[:i], path[i + 1:]
 
-        try:
-            mod = __import__(module, {}, {}, [attr])
-        except ImportError, e:
-            raise ImproperlyConfigured, \
-                'Error importing SCM Tool %s: "%s"' % (module, e)
+            try:
+                mod = __import__(module, {}, {}, [attr])
+            except ImportError as e:
+                raise ImproperlyConfigured(
+                    'Error importing SCM Tool %s: "%s"' % (module, e))
 
-        try:
-            return getattr(mod, attr)
-        except AttributeError:
-            raise ImproperlyConfigured, \
-                'Module "%s" does not define a "%s" SCM Tool' % (module, attr)
+            try:
+                self._scmtool_class = getattr(mod, attr)
+            except AttributeError:
+                raise ImproperlyConfigured(
+                    'Module "%s" does not define a "%s" SCM Tool'
+                    % (module, attr))
+
+        return self._scmtool_class
+    scmtool_class = property(get_scmtool_class)
 
     class Meta:
         ordering = ("name",)
 
 
+@python_2_unicode_compatible
 class Repository(models.Model):
     name = models.CharField(max_length=64)
-    path = models.CharField(
-        max_length=255,
-        help_text=_("This should be the path to the repository. For most "
-                    "version control systems, this will be a URI of some "
-                    "form or another. For CVS, this should be a pserver "
-                    "path. For Perforce, this should be a port name. For "
-                    "local git, this should be the path to the .git directory "
-                    "on the local disk. For remote git, this should be the "
-                    "git URL that users clone. For Plastic, this should be a "
-                    "repository spec in the form [repo]@[hostname]:[port]."
-                    "In case of ClearCase enter absolute path to VOB."))
+    path = models.CharField(max_length=255)
     mirror_path = models.CharField(max_length=255, blank=True)
     raw_file_url = models.CharField(
         _('Raw file URL mask'),
@@ -129,6 +145,9 @@ class Repository(models.Model):
 
     objects = RepositoryManager()
 
+    BRANCHES_CACHE_PERIOD = 60 * 5  # 5 minutes
+    COMMITS_CACHE_PERIOD = 60 * 60 * 24  # 1 day
+
     def get_scmtool(self):
         cls = self.tool.get_scmtool_class()
         return cls(self)
@@ -140,33 +159,120 @@ class Repository(models.Model):
 
         return None
 
-    def get_file(self, path, revision):
+    @property
+    def supports_post_commit(self):
+        """Whether or not this repository supports post-commit creation.
+
+        If this is True, the get_branches and get_commits methods will be
+        implemented to fetch information about the committed revisions, and
+        get_change will be implemented to fetch the actual diff. This is used
+        by ReviewRequest.update_from_commit_id.
+        """
+        hosting_service = self.hosting_service
+        if hosting_service:
+            return hosting_service.supports_post_commit
+        else:
+            return self.get_scmtool().supports_post_commit
+
+    def get_file(self, path, revision, base_commit_id=None, request=None):
         """Returns a file from the repository.
 
         This will attempt to retrieve the file from the repository. If the
         repository is backed by a hosting service, it will go through that.
         Otherwise, it will attempt to directly access the repository.
         """
-        hosting_service = self.hosting_service
+        # We wrap the result of get_file in a list and then return the first
+        # element after getting the result from the cache. This prevents the
+        # cache backend from converting to unicode, since we're no longer
+        # passing in a string and the cache backend doesn't recursively look
+        # through the list in order to convert the elements inside.
+        #
+        # Basically, this fixes the massive regressions introduced by the
+        # Django unicode changes.
+        return cache_memoize(
+            self._make_file_cache_key(path, revision, base_commit_id),
+            lambda: [self._get_file_uncached(path, revision, base_commit_id,
+                                             request)],
+            large_data=True)[0]
 
-        if hosting_service:
-            return hosting_service.get_file(self, path, revision)
-        else:
-            return self.get_scmtool().get_file(path, revision)
-
-    def get_file_exists(self, path, revision):
+    def get_file_exists(self, path, revision, base_commit_id=None,
+                        request=None):
         """Returns whether or not a file exists in the repository.
 
         If the repository is backed by a hosting service, this will go
         through that. Otherwise, it will attempt to directly access the
         repository.
+
+        The result of this call will be cached, making future lookups
+        of this path and revision on this repository faster.
+        """
+        key = self._make_file_exists_cache_key(path, revision, base_commit_id)
+
+        if cache.get(make_cache_key(key)) == '1':
+            return True
+
+        exists = self._get_file_exists_uncached(path, revision,
+                                                base_commit_id, request)
+
+        if exists:
+            cache_memoize(key, lambda: '1')
+
+        return exists
+
+    def get_branches(self):
+        """Returns a list of branches."""
+        hosting_service = self.hosting_service
+
+        cache_key = make_cache_key('repository-branches:%s' % self.pk)
+        if hosting_service:
+            branches_callable = lambda: hosting_service.get_branches(self)
+        else:
+            branches_callable = self.get_scmtool().get_branches
+
+        return cache_memoize(cache_key, branches_callable,
+                             self.BRANCHES_CACHE_PERIOD)
+
+    def get_commit_cache_key(self, commit):
+        return 'repository-commit:%s:%s' % (self.pk, commit)
+
+    def get_commits(self, start=None):
+        """Returns a list of commits.
+
+        This is paginated via the 'start' parameter. Any exceptions are
+        expected to be handled by the caller.
+        """
+        hosting_service = self.hosting_service
+
+        cache_key = make_cache_key('repository-commits:%s:%s' % (self.pk, start))
+        if hosting_service:
+            commits_callable = lambda: hosting_service.get_commits(self, start)
+        else:
+            commits_callable = lambda: self.get_scmtool().get_commits(start)
+
+        # We cache both the entire list for 'start', as well as each individual
+        # commit. This allows us to reduce API load when people are looking at
+        # the "new review request" page more frequently than they're pushing
+        # code, and will usually save 1 API request when they go to actually
+        # create a new review request.
+        commits = cache_memoize(cache_key, commits_callable)
+
+        for commit in commits:
+            cache.set(self.get_commit_cache_key(commit.id),
+                      commit, self.COMMITS_CACHE_PERIOD)
+
+        return commits
+
+    def get_change(self, revision):
+        """Get an individual change.
+
+        This returns a tuple of (commit message, diff).
         """
         hosting_service = self.hosting_service
 
         if hosting_service:
-            return hosting_service.get_file_exists(self, path, revision)
+            return hosting_service.get_change(self, revision)
         else:
-            return self.get_scmtool().file_exists(path, revision)
+            return self.get_scmtool().get_change(revision)
 
     def is_accessible_by(self, user):
         """Returns whether or not the user has access to the repository.
@@ -188,15 +294,116 @@ class Repository(models.Model):
 
         The repository is mutable by the user if the user is an administrator
         with proper permissions or the repository is part of a LocalSite and
-        the user is in the admin list.
+        the user has permissions to modify it.
         """
-        return (user.has_perm('scmtools.change_repository') or
-                (self.local_site and self.local_site.is_mutable_by(user)))
+        return user.has_perm('scmtools.change_repository', self.local_site)
 
-    def __unicode__(self):
+    def __str__(self):
         return self.name
+
+    def _make_file_cache_key(self, path, revision, base_commit_id):
+        """Makes a cache key for fetched files."""
+        return "file:%s:%s:%s:%s" % (self.pk, urlquote(path),
+                                     urlquote(revision),
+                                     urlquote(base_commit_id or ''))
+
+    def _make_file_exists_cache_key(self, path, revision, base_commit_id):
+        """Makes a cache key for file existence checks."""
+        return "file-exists:%s:%s:%s:%s" % (self.pk, urlquote(path),
+                                            urlquote(revision),
+                                            urlquote(base_commit_id or ''))
+
+    def _get_file_uncached(self, path, revision, base_commit_id, request):
+        """Internal function for fetching an uncached file.
+
+        This is called by get_file if the file isn't already in the cache.
+        """
+        fetching_file.send(sender=self,
+                           path=path,
+                           revision=revision,
+                           base_commit_id=base_commit_id,
+                           request=request)
+
+        if base_commit_id:
+            timer_msg = "Fetching file '%s' r%s (base commit ID %s) from %s" \
+                        % (path, revision, base_commit_id, self)
+        else:
+            timer_msg = "Fetching file '%s' r%s from %s" \
+                        % (path, revision, self)
+
+        log_timer = log_timed(timer_msg, request=request)
+
+        hosting_service = self.hosting_service
+
+        if hosting_service:
+            data = hosting_service.get_file(
+                self,
+                path,
+                revision,
+                base_commit_id=base_commit_id)
+        else:
+            data = self.get_scmtool().get_file(path, revision)
+
+        log_timer.done()
+
+        fetched_file.send(sender=self,
+                          path=path,
+                          revision=revision,
+                          base_commit_id=base_commit_id,
+                          request=request,
+                          data=data)
+
+        return data
+
+    def _get_file_exists_uncached(self, path, revision, base_commit_id,
+                                  request):
+        """Internal function for checking that a file exists.
+
+        This is called by get_file_eixsts if the file isn't already in the
+        cache.
+
+        This function is smart enough to check if the file exists in cache,
+        and will use that for the result instead of making a separate call.
+        """
+        # First we check to see if we've fetched the file before. If so,
+        # it's in there and we can just return that we have it.
+        file_cache_key = make_cache_key(
+            self._make_file_cache_key(path, revision, base_commit_id))
+
+        if cache.has_key(file_cache_key):
+            exists = True
+        else:
+            # We didn't have that in the cache, so check from the repository.
+            checking_file_exists.send(sender=self,
+                                      path=path,
+                                      revision=revision,
+                                      base_commit_id=base_commit_id,
+                                      request=request)
+
+            hosting_service = self.hosting_service
+
+            if hosting_service:
+                exists = hosting_service.get_file_exists(
+                    self,
+                    path,
+                    revision,
+                    base_commit_id=base_commit_id)
+            else:
+                exists = self.get_scmtool().file_exists(path, revision)
+
+            checked_file_exists.send(sender=self,
+                                     path=path,
+                                     revision=revision,
+                                     base_commit_id=base_commit_id,
+                                     request=request,
+                                     exists=exists)
+
+        return exists
 
     class Meta:
         verbose_name_plural = "Repositories"
+        # TODO: the path:local_site unique constraint causes problems when
+        # archiving repositories. We should really remove this constraint from
+        # the tables and enforce it in code whenever visible=True
         unique_together = (('name', 'local_site'),
                            ('path', 'local_site'))

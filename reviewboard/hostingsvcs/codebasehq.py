@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django import forms
 from django.utils.translation import ugettext_lazy as _
 
@@ -57,9 +59,9 @@ class CodebaseHQ(HostingService):
                     '%(codebasehq_project_name)s/'
                     '%(codebasehq_repo_name)s.git',
             'raw_file_url': 'https://api3.codebasehq.com/'
-                             '%(codebasehq_project_name)s/'
-                             '%(codebasehq_repo_name)s/blob/'
-                             '<revision>',
+                            '%(codebasehq_project_name)s/'
+                            '%(codebasehq_repo_name)s/blob/'
+                            '<revision>',
         },
 
         #
@@ -70,7 +72,8 @@ class CodebaseHQ(HostingService):
         #
         #'Subversion': {
         #    'path': 'https://%(username)s@%(codebasehq_group_name)s/'
-        #            '%(codebasehq_project_name)s/%(codebasehq_repo_name)s.svn',
+        #            '%(codebasehq_project_name)s/'
+        #            '%(codebasehq_repo_name)s.svn',
         #},
 
         # NOTE: Mercurial doesn't work because they don't use HTTP Basic

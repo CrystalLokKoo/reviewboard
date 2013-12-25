@@ -1,9 +1,12 @@
 # Django settings for reviewboard project.
 
+from __future__ import unicode_literals
+
 import os
 import sys
 
 import djblets
+from django.core.urlresolvers import reverse
 
 
 # Can't import django.utils.translation yet
@@ -43,16 +46,20 @@ EMAIL_SUBJECT_PREFIX = "[Review Board] "
 
 # If you set this to False, Django will make some optimizations so as not
 # to load the internationalization machinery.
-USE_I18N = False
+USE_I18N = True
 LANGUAGES = (
     ('en', _('English')),
-    )
+    ('it', _('Italian')),
+    ('zh-tw', _('Traditional Chinese')),
+)
 
 # List of callables that know how to import templates from various sources.
 TEMPLATE_LOADERS = (
-    'django.template.loaders.filesystem.Loader',
-    'django.template.loaders.app_directories.Loader',
-    'djblets.extensions.loaders.load_template_source',
+    ('django.template.loaders.cached.Loader', (
+        'django.template.loaders.filesystem.Loader',
+        'django.template.loaders.app_directories.Loader',
+        'djblets.extensions.loaders.load_template_source',
+    )),
 )
 
 MIDDLEWARE_CLASSES = [
@@ -60,6 +67,7 @@ MIDDLEWARE_CLASSES = [
     'django.middleware.gzip.GZipMiddleware',
     'reviewboard.admin.middleware.InitReviewBoardMiddleware',
 
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.doc.XViewMiddleware',
     'django.middleware.http.ConditionalGetMiddleware',
@@ -78,28 +86,34 @@ MIDDLEWARE_CLASSES = [
     'reviewboard.admin.middleware.CheckUpdatesRequiredMiddleware',
     'reviewboard.admin.middleware.X509AuthMiddleware',
     'reviewboard.site.middleware.LocalSiteMiddleware',
+
+    # Keep this last so that everything is initialized before middleware
+    # from extensions are run.
+    'djblets.extensions.middleware.ExtensionsMiddlewareRunner',
 ]
 RB_EXTRA_MIDDLEWARE_CLASSES = []
 
 TEMPLATE_CONTEXT_PROCESSORS = (
     'django.contrib.auth.context_processors.auth',
+    'django.contrib.messages.context_processors.messages',
     'django.core.context_processors.debug',
     'django.core.context_processors.i18n',
     'django.core.context_processors.media',
     'django.core.context_processors.request',
     'django.core.context_processors.static',
+    'djblets.cache.context_processors.ajax_serial',
+    'djblets.cache.context_processors.media_serial',
     'djblets.siteconfig.context_processors.siteconfig',
-    'djblets.util.context_processors.settingsVars',
-    'djblets.util.context_processors.siteRoot',
-    'djblets.util.context_processors.ajaxSerial',
-    'djblets.util.context_processors.mediaSerial',
+    'djblets.siteconfig.context_processors.settings_vars',
+    'djblets.urls.context_processors.site_root',
     'reviewboard.accounts.context_processors.auth_backends',
+    'reviewboard.accounts.context_processors.profile',
     'reviewboard.admin.context_processors.version',
     'reviewboard.site.context_processors.localsite',
 )
 
 SITE_ROOT_URLCONF = 'reviewboard.urls'
-ROOT_URLCONF = 'djblets.util.rooturl'
+ROOT_URLCONF = 'djblets.urls.root'
 
 REVIEWBOARD_ROOT = os.path.abspath(os.path.split(__file__)[0])
 
@@ -114,12 +128,14 @@ TEMPLATE_DIRS = (
 STATICFILES_DIRS = (
     ('lib', os.path.join(REVIEWBOARD_ROOT, 'static', 'lib')),
     ('rb', os.path.join(REVIEWBOARD_ROOT, 'static', 'rb')),
-    ('djblets', os.path.join(os.path.dirname(djblets.__file__), 'media')),
+    ('djblets', os.path.join(os.path.dirname(djblets.__file__),
+                             'static', 'djblets')),
 )
 
 STATICFILES_FINDERS = (
     'django.contrib.staticfiles.finders.FileSystemFinder',
     'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+    'djblets.extensions.staticfiles.ExtensionFinder',
 )
 
 STATICFILES_STORAGE = 'pipeline.storage.PipelineCachedStorage'
@@ -132,6 +148,7 @@ RB_BUILTIN_APPS = [
     'django.contrib.sites',
     'django.contrib.sessions',
     'django.contrib.staticfiles',
+    'djblets',
     'djblets.datagrid',
     'djblets.extensions',
     'djblets.feedview',
@@ -141,7 +158,8 @@ RB_BUILTIN_APPS = [
     'djblets.siteconfig',
     'djblets.util',
     'djblets.webapi',
-    'pipeline', # Must be after djblets.pipeline
+    'pipeline',  # Must be after djblets.pipeline
+    'reviewboard',
     'reviewboard.accounts',
     'reviewboard.admin',
     'reviewboard.attachments',
@@ -151,6 +169,7 @@ RB_BUILTIN_APPS = [
     'reviewboard.hostingsvcs',
     'reviewboard.notifications',
     'reviewboard.reviews',
+    'reviewboard.reviews.ui',
     'reviewboard.scmtools',
     'reviewboard.site',
     'reviewboard.ssh',
@@ -164,13 +183,23 @@ WEB_API_ENCODERS = (
 
 SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 
+# Set up a default cache backend. This will mostly be useful for
+# local development, as sites will override this.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'reviewboard',
+    },
+}
+
 LOGGING_NAME = "reviewboard"
+LOGGING_REQUEST_FORMAT = "%(_local_site_name)s - %(user)s - %(path)s"
 
 AUTH_PROFILE_MODULE = "accounts.Profile"
 
 # Default expiration time for the cache.  Note that this has no effect unless
 # CACHE_BACKEND is specified in settings_local.py
-CACHE_EXPIRATION_TIME = 60 * 60 * 24 * 30 # 1 month
+CACHE_EXPIRATION_TIME = 60 * 60 * 24 * 30  # 1 month
 
 # Custom test runner, which uses nose to find tests and execute them.  This
 # gives us a somewhat more comprehensive test execution than django's built-in
@@ -184,6 +213,8 @@ install_help = '''
 Please see http://www.reviewboard.org/docs/manual/dev/admin/
 for help setting up Review Board.
 '''
+
+
 def dependency_error(string):
     sys.stderr.write('%s\n' % string)
     sys.stderr.write(install_help)
@@ -195,20 +226,29 @@ if os.path.split(os.path.dirname(__file__))[1] != 'reviewboard':
 LOCAL_ROOT = None
 PRODUCTION = True
 
+# Default ALLOWED_HOSTS to allow everything. This should be overridden in
+# settings_local.py
+ALLOWED_HOSTS = ['*']
+
 # Cookie settings
 LANGUAGE_COOKIE_NAME = "rblanguage"
 SESSION_COOKIE_NAME = "rbsessionid"
-SESSION_COOKIE_AGE = 365 * 24 * 60 * 60 # 1 year
-SESSION_COOKIE_PATH = SITE_ROOT
+SESSION_COOKIE_AGE = 365 * 24 * 60 * 60  # 1 year
+
+# Default support settings
+DEFAULT_SUPPORT_URL = 'http://www.beanbaginc.com/support/reviewboard/' \
+                      '?support-data=%(support_data)s'
+
 
 # Load local settings.  This can override anything in here, but at the very
 # least it needs to define database connectivity.
 try:
     import settings_local
     from settings_local import *
-except ImportError, exc:
+except ImportError as exc:
     dependency_error('Unable to import settings_local.py: %s' % exc)
 
+SESSION_COOKIE_PATH = SITE_ROOT
 
 INSTALLED_APPS = RB_BUILTIN_APPS + RB_EXTRA_APPS + ['django_evolution']
 MIDDLEWARE_CLASSES += RB_EXTRA_MIDDLEWARE_CLASSES
@@ -234,102 +274,37 @@ EXTENSIONS_STATIC_ROOT = os.path.join(MEDIA_ROOT, 'ext')
 ADMIN_MEDIA_ROOT = STATIC_ROOT + 'admin/'
 
 
+# Make sure that we have a staticfiles cache set up for media generation.
+# By default, we want to store this in local memory and not memcached or
+# some other backend, since that will cause stale media problems.
+if 'staticfiles' not in CACHES:
+    CACHES['staticfiles'] = {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'staticfiles-filehashes',
+    }
+
+
 # URL prefix for media -- CSS, JavaScript and images. Make sure to use a
 # trailing slash.
 #
 # Examples: "http://foo.com/media/", "/media/".
-STATIC_URL = getattr(settings_local, 'STATIC_URL', SITE_ROOT + 'static/')
-MEDIA_URL = getattr(settings_local, 'MEDIA_URL', SITE_ROOT + 'media/')
+STATIC_DIRECTORY = 'static/'
+STATIC_URL = getattr(settings_local, 'STATIC_URL', SITE_ROOT + STATIC_DIRECTORY)
+
+MEDIA_DIRECTORY = 'media/'
+MEDIA_URL = getattr(settings_local, 'MEDIA_URL', SITE_ROOT + MEDIA_DIRECTORY)
 
 
 # Base these on the user's SITE_ROOT.
 LOGIN_URL = SITE_ROOT + 'account/login/'
+LOGIN_REDIRECT_URL = SITE_ROOT + 'dashboard/'
 
-# Media compression
-PIPELINE_JS = {
-    '3rdparty': {
-        'source_filenames': (
-            'lib/js/underscore-1.3.3.min.js',
-            'lib/js/backbone-0.9.2.min.js',
-            'lib/js/jquery.form.js',
-            'lib/js/jquery.timesince.js',
-            'lib/js/ui.autocomplete.js',
-        ),
-        'output_filename': 'lib/js/3rdparty.min.js',
-    },
-    'common': {
-        'source_filenames': (
-            'rb/js/utils/backboneUtils.js',
-            'rb/js/common.js',
-            'rb/js/datastore.js',
-        ),
-        'output_filename': 'rb/js/base.min.js',
-    },
-    'reviews': {
-        'source_filenames': (
-            'rb/js/models/abstractCommentBlockModel.js',
-            'rb/js/models/abstractReviewableModel.js',
-            'rb/js/models/screenshotCommentBlockModel.js',
-            'rb/js/models/screenshotReviewableModel.js',
-            'rb/js/views/abstractCommentBlockView.js',
-            'rb/js/views/abstractReviewableView.js',
-            'rb/js/views/screenshotCommentBlockView.js',
-            'rb/js/views/screenshotReviewableView.js',
-            'rb/js/diffviewer.js',
-            'rb/js/reviews.js',
-        ),
-        'output_filename': 'rb/js/reviews.min.js',
-    },
-    'admin': {
-        'source_filenames': (
-            'lib/js/flot/jquery.flot.min.js',
-            'lib/js/flot/jquery.flot.pie.min.js',
-            'lib/js/flot/jquery.flot.selection.min.js',
-            'lib/js/jquery.masonry.js',
-            'rb/js/admin.js',
-        ),
-        'output_filename': 'rb/js/admin.min.js',
-    },
-    'repositoryform': {
-        'source_filenames': (
-            'rb/js/repositoryform.js',
-        ),
-        'output_filename': 'rb/js/repositoryform.min.js',
-    },
-}
 
-PIPELINE_CSS = {
-    'common': {
-        'source_filenames': (
-            'rb/css/common.less',
-            'rb/css/dashboard.less',
-            'rb/css/search.less',
-        ),
-        'output_filename': 'rb/css/common.min.css',
-        'absolute_paths': False,
-    },
-    'reviews': {
-        'source_filenames': (
-            'rb/css/diffviewer.less',
-            'rb/css/reviews.less',
-            'rb/css/syntax.css',
-        ),
-        'output_filename': 'rb/css/reviews.min.css',
-        'absolute_paths': False,
-    },
-    'admin': {
-        'source_filenames': (
-            'rb/css/admin.less',
-            'rb/css/admin-dashboard.less',
-        ),
-        'output_filename': 'rb/css/admin.min.css',
-        'absolute_paths': False,
-    },
-}
+# Static media setup
+from reviewboard.staticbundles import PIPELINE_CSS, PIPELINE_JS
 
-BLESS_IMPORT_PATHS = ('rb/css/',)
 PIPELINE_CSS_COMPRESSOR = None
-PIPELINE_JS_COMPRESSOR = 'pipeline.compressors.jsmin.JSMinCompressor'
+PIPELINE_JS_COMPRESSOR = 'pipeline.compressors.uglifyjs.UglifyJSCompressor'
 
 # On production (site-installed) builds, we always want to use the pre-compiled
 # versions. We want this regardless of the DEBUG setting (since they may
@@ -341,11 +316,16 @@ PIPELINE_JS_COMPRESSOR = 'pipeline.compressors.jsmin.JSMinCompressor'
 # with the built output, so treat it like a production install.
 
 if PRODUCTION or not DEBUG or os.getenv('FORCE_BUILD_MEDIA', ''):
-    PIPELINE_COMPILERS = ['djblets.pipeline.compilers.bless.BlessCompiler']
-    PIPELINE = True
+    PIPELINE_COMPILERS = ['pipeline.compilers.less.LessCompiler']
+    PIPELINE_ENABLED = True
 elif DEBUG:
     PIPELINE_COMPILERS = []
-    PIPELINE = False
+    PIPELINE_ENABLED = False
 
 # Packages to unit test
 TEST_PACKAGES = ['reviewboard']
+
+# URL Overrides
+ABSOLUTE_URL_OVERRIDES = {
+    'auth.user': lambda u: reverse('user', kwargs={'username': u.username})
+}

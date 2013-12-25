@@ -15,6 +15,8 @@ RB.AbstractCommentBlock = Backbone.Model.extend({
         hasDraft: false,
         canDelete: false,
         draftComment: null,
+        reviewRequest: null,
+        review: null,
         serializedComments: [],
         count: 0
     },
@@ -25,6 +27,11 @@ RB.AbstractCommentBlock = Backbone.Model.extend({
     initialize: function() {
         var comments = this.get('serializedComments'),
             newSerializedComments = [];
+
+        console.assert(this.get('reviewRequest'),
+                       'reviewRequest must be provided');
+        console.assert(this.get('review'),
+                       'review must be provided');
 
         /*
          * Find out if there's any draft comments, and filter them out of the
@@ -68,7 +75,7 @@ RB.AbstractCommentBlock = Backbone.Model.extend({
      * This must be implemented by a subclass to return a Comment class
      * specific to the subclass.
      */
-    createComment: function(id) {
+    createComment: function(/* id */) {
         console.assert(false, 'This must be implemented by a subclass');
     },
 
@@ -81,8 +88,7 @@ RB.AbstractCommentBlock = Backbone.Model.extend({
      * The actual comment object is up to the subclass to create.
      */
     ensureDraftComment: function(id, text) {
-        var self = this,
-            comment;
+        var comment;
 
         if (this.has('draftComment')) {
             return;
@@ -91,15 +97,15 @@ RB.AbstractCommentBlock = Backbone.Model.extend({
         comment = this.createComment(id);
 
         if (text) {
-            comment.text = text;
+            comment.set('text', text);
         }
 
-        $.event.add(comment, 'destroyed', function() {
-            self.set('draftComment', null);
-            self._updateCount();
-        });
+        comment.on('destroy', function() {
+            this.set('draftComment', null);
+            this._updateCount();
+        }, this);
 
-        $.event.add(comment, 'saved', _.bind(this._updateCount, this));
+        comment.on('saved', this._updateCount, this);
 
         this.set('draftComment', comment);
     },

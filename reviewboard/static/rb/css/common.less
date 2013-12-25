@@ -31,8 +31,10 @@ label.required {
   font-weight: bold;
 }
 
-pre {
-  font-size: 10pt;
+pre, textarea, .CodeMirror {
+  font-size: @textarea-font-size;
+  font-family: @textarea-font-family;
+  line-height: @textarea-line-height;
 }
 
 span {
@@ -78,6 +80,97 @@ ul.errorlist {
 
 
 /****************************************************************************
+ * Buttons
+ ****************************************************************************/
+
+.btn,
+input[type="button"],
+input[type="submit"] {
+  // Button Base
+  cursor: pointer;
+  display: inline-block;
+  #gradient > .vertical-three-colors(#ffffff, #ffffff, 25%, darken(#ffffff, 10%)); // Don't use .gradientbar() here since it does a three-color gradient
+  padding: 3px 8px;
+  text-shadow: 0 1px 1px rgba(255,255,255,.75);
+  color: #333;
+  font-size: 13px;
+  line-height: normal;
+  border: 1px solid #ccc;
+  border-bottom-color: #bbb;
+  .border-radius(4px);
+  .box-shadow(inset 0 1px 0 rgba(255,255,255,.2), 0 1px 2px rgba(0,0,0,.05));
+
+  &:hover {
+    background-position: 0 -15px;
+    color: #333;
+    text-decoration: none;
+  }
+
+  // Primary Button Type
+  &.primary, &.default {
+    color: white;
+    text-shadow: none;
+
+    .gradientBar(@btn-primary-color1, @btn-primary-color2);
+  }
+
+  // Transitions
+  .transition(.1s linear all);
+
+  // Active and Disabled states
+  &:active {
+    .box-shadow(inset 0 2px 4px rgba(0,0,0,.25), 0 1px 2px rgba(0,0,0,.05));
+  }
+
+  &.disabled {
+    cursor: default;
+    background-image: none;
+    .reset-filter();
+    .opacity(65);
+    .box-shadow(none);
+  }
+
+  &[disabled] {
+    // disabled pseudo can't be included with .disabled
+    // def because IE8 and below will drop it ;_;
+    cursor: default;
+    background-image: none;
+    .reset-filter();
+    .opacity(65);
+    .box-shadow(none);
+  }
+
+  // Button Sizes
+  &.large {
+    font-size: 130%;
+    line-height: normal;
+    padding: 9px 14px 9px;
+    .border-radius(6px);
+  }
+
+  &.small {
+    padding: 7px 9px 7px;
+    font-size: 11px;
+  }
+
+  &.danger {
+    color: white !important;
+    .gradientBar(#ee5f5b, #c43c35);
+  }
+}
+
+
+// Help Firefox not be a jerk about adding extra padding to buttons
+button.btn,
+input[type=submit].btn {
+  &::-moz-focus-inner {
+    padding: 0;
+    border: 0;
+  }
+}
+
+
+/****************************************************************************
  * Banners
  ****************************************************************************/
 .banner {
@@ -87,13 +180,13 @@ ul.errorlist {
   padding: 8px 10px;
   z-index: @z-index-banner;
 
-  h1 {
+  &>h1 {
     display: inline;
     margin-right: 0.2em;
     padding: 0;
   }
 
-  input {
+  &>input {
     margin-left: 10px;
   }
 }
@@ -192,8 +285,9 @@ h1.title,
   background-image: url('../images/box_bottom_bg.png');
   background-position: bottom left;
   background-repeat: repeat-x;
-  padding-bottom: 1px; /* IE wants this and it does no harm. */
   .border-radius(@box-border-radius);
+
+  padding-bottom: 1px\9; /* IE wants this. The \9 targets IE 7,8,9. */
 }
 
 .box-inner form {
@@ -203,28 +297,53 @@ h1.title,
 .datagrid-title,
 .datagrid-titlebox {
   background: @box-title-bg !important;
+  .border-radius(@box-border-radius @box-border-radius 0 0);
+}
+
+.datagrid-main {
+  .border-radius(@box-border-radius);
 }
 
 .datagrid-header {
   border-top: 0 !important;
+
+  &:last-child {
+    border-right: 0;
+  }
 }
 
 .datagrid-menu {
   border: 1px #888A85 solid;
 }
 
-.datagrid .shipit-count {
-  background-image: url("../images/shipit_bg.png");
-  background-position: top left;
-  background-repeat: repeat-x;
-  background-color: #6bc810;
-  border: 1px #478a06 solid;
-  display: block;
-  color: white;
-  font-weight: bold;
-  padding: 0.05em 0.5em;
-  white-space: nowrap;
-  .border-radius(10px);
+.datagrid {
+  tr:last-child {
+    td:first-child {
+      .border-radius(0 0 0 @box-border-radius);
+    }
+
+    td:last-child {
+      .border-radius(0 0 @box-border-radius 0);
+    }
+  }
+
+  td:last-child {
+    border-right: 0;
+  }
+
+  .shipit-count {
+    background-image: url("../images/shipit_bg.png");
+    background-position: top left;
+    background-repeat: repeat-x;
+    background-color: #6bc810;
+    border: 1px #478a06 solid;
+    display: block;
+    color: #205003;
+    font-weight: bold;
+    padding: 0.05em 0.5em;
+    white-space: nowrap;
+    .border-radius(10px);
+  }
 }
 
 .server-error-box .response-data {
@@ -262,7 +381,7 @@ h1.title,
 .editicon {
   margin-left: 4px;
 
-  img {
+  .rb-icon {
     vertical-align: bottom;
   }
 }
@@ -284,9 +403,16 @@ h1.title,
 
   textarea {
     border: 1px #888a85 solid;
-    font-size: 10pt;
     margin: 5px 0 0 0;
     padding: 10px;
+    .box-sizing(border-box);
+
+    /*
+     * Firefox adds an extra pixel on the sides of the textarea, making
+     * alignment hard, so we need to subtract a pixel.
+     */
+    -moz-padding-start: 9px;
+    -moz-padding-end: 9px;
   }
 }
 
@@ -354,9 +480,8 @@ form table td {
  * Account page
  ****************************************************************************/
 .prefsbuttons {
-  padding: 8px;
-  background-color: #B6CCE3;
-  border: 1px #3465A4 solid;
+  padding: 1em;
+  text-align: center;
 }
 
 .prefsgroup ul {
@@ -416,7 +541,7 @@ form table td {
 
   #logo {
     position: absolute;
-    top: 0px;
+    top: -2px;
     left: @headerbar-logo-padding-horiz;
   }
 
@@ -462,6 +587,7 @@ form table td {
     padding: 0;
     position: relative;
     white-space: nowrap;
+    z-index: @z-index-account-nav-list;
 
     &:hover {
       background: @headerbar-bg-active;
@@ -511,7 +637,7 @@ form table td {
         padding: 0;
         text-align: right;
 
-        &:hover {
+        &:last-child {
           .border-radius(0 0 @box-border-radius @box-border-radius);
         }
 
@@ -574,15 +700,31 @@ form table td {
   }
 }
 
-#manual-updates p {
-  font-size: 9pt;
+#manual-updates {
+  padding: 1em;
+
+  .main {
+    padding: 1em;
+
+    h1, h2 {
+      margin-top: 2em;
+    }
+  }
+
+  p {
+    font-size: 9pt;
+  }
+}
+
+#navbar-container {
+  margin: 0 0 1em 0;
 }
 
 #navbar {
   background: @navbar-bg;
   border-bottom: 1px @navbar-border-color solid;
   list-style: none;
-  margin: 0 0 1em 0;
+  margin: 0;
   min-height: 1.5em;
   padding: @headerbar-padding;
   padding-left: @headerbar-padding-left;
@@ -606,6 +748,7 @@ form table td {
 
 body.admin #navbar {
   background: url("../images/admin/yellow_bg_small.png") repeat-x #F9F2C9;
+  margin: 0;
 
   a {
     color: black;
@@ -613,13 +756,152 @@ body.admin #navbar {
 }
 
 #page-container {
-  padding: 0 0.8em 0.8em 0.8em;
+  padding: 0 @page-container-padding @page-container-padding @page-container-padding;
 }
 
 #searchbar {
   position: absolute;
   right: 0;
   margin-top: -3px;
+}
+
+
+/****************************************************************************
+ * Login/Register pages
+ ****************************************************************************/
+@auth-section-margin: 2em;
+@auth-label-width: 12em;
+@auth-field-width: 16em;
+
+
+#auth_container {
+  font-size: 120%;
+  margin: 7em 0 0 0;
+  text-align: center;
+
+  input[type="text"], input[type="password"] {
+    border: 1px #aaa solid;
+    font-size: inherit;
+    margin: 0;
+    padding: 0.5em;
+    width: @auth-field-width;
+    .border-radius(@box-border-radius);
+    .box-sizing(border-box);
+  }
+
+  .auth-button-container {
+    width: 16em;
+
+    input {
+      font-size: 120%;
+      margin: 0;
+      padding: 0.6em;
+      width: 100%;
+      .box-sizing(border-box);
+    }
+  }
+
+  .auth-form-row {
+    clear: both;
+    margin: 1.5em 0;
+    padding-left: @auth-label-width;
+
+    &.auth-field-row {
+      padding-left: 0;
+
+      label {
+        float: left;
+        font-weight: normal;
+        padding: 0.5em 1em 0.5em 0.5em;
+        text-align: right;
+        width: @auth-label-width;
+        .box-sizing(border-box);
+      }
+
+      .errorlist {
+        display: block;
+        margin: 0.5em 0 0 @auth-label-width;
+        width: @auth-field-width;
+
+        li {
+          font-weight: normal;
+          font-size: 9pt;
+        }
+      }
+    }
+  }
+
+  .auth-header {
+    margin: 0 0 1em 0;
+
+    h1 {
+      font-size: 120%;
+      margin: 1em 0;
+      padding: 0;
+    }
+
+    p {
+      color: #444;
+      margin: 1em 0;
+    }
+
+    .errorbox {
+      display: inline-block;
+      text-align: center;
+
+      .errorlist {
+        text-align: left;
+      }
+    }
+  }
+
+  .auth-section {
+    display: inline-block;
+    margin: 0 @auth-section-margin;
+    text-align: left;
+    vertical-align: top;
+
+    &.main-auth-section {
+      margin-left: (-@auth-label-width + @auth-section-margin);
+    }
+  }
+
+  .errorlist {
+    margin: 0;
+    padding: 0;
+
+    li {
+      display: block;
+      font-weight: normal;
+      margin: 0 0 1em 0;;
+    }
+  }
+}
+
+#auth_container #login_form {
+  .login-links {
+    margin-top: 2em;
+    text-align: center;
+
+    p {
+      width: @auth-field-width;
+
+      a {
+        color: blue;
+        text-decoration: none;
+      }
+    }
+  }
+}
+
+#auth_container #register_form {
+  .register-captcha-row {
+    padding-left: 0;
+
+    .register-captcha-container {
+      float: right;
+    }
+  }
 }
 
 

@@ -1,11 +1,15 @@
+from __future__ import unicode_literals
+
 import hashlib
+import logging
 
 from django.db import models
 from django.utils import timezone
+from django.utils.encoding import python_2_unicode_compatible
 from django.utils.translation import ugettext_lazy as _
-from djblets.util.fields import Base64Field
+from djblets.db.fields import Base64Field, JSONField
 
-from reviewboard.diffviewer.managers import FileDiffDataManager
+from reviewboard.diffviewer.managers import FileDiffDataManager, DiffSetManager
 from reviewboard.scmtools.core import PRE_CREATION
 from reviewboard.scmtools.models import Repository
 
@@ -20,7 +24,47 @@ class FileDiffData(models.Model):
     binary = Base64Field(_("base64"))
     objects = FileDiffDataManager()
 
+    extra_data = JSONField(null=True)
 
+    @property
+    def insert_count(self):
+        return self.extra_data.get('insert_count')
+
+    @insert_count.setter
+    def insert_count(self, value):
+        self.extra_data['insert_count'] = value
+
+    @property
+    def delete_count(self):
+        return self.extra_data.get('delete_count')
+
+    @delete_count.setter
+    def delete_count(self, value):
+        self.extra_data['delete_count'] = value
+
+    def recalculate_line_counts(self, tool):
+        """Recalculates the insert_count and delete_count values.
+
+        This will attempt to re-parse the stored diff and fetch the
+        line counts through the parser.
+        """
+        logging.debug('Recalculating insert/delete line counts on '
+                      'FileDiffData %s' % self.pk)
+
+        files = tool.get_parser(self.binary).parse()
+
+        if len(files) != 1:
+            logging.error('Failed to correctly parse stored diff data in '
+                          'FileDiffData ID %s when trying to get '
+                          'insert/delete line counts' % self.pk)
+        else:
+            file_info = files[0]
+            self.insert_count = file_info.insert_count
+            self.delete_count = file_info.delete_count
+            self.save()
+
+
+@python_2_unicode_compatible
 class FileDiff(models.Model):
     """
     A diff of a single file.
@@ -49,11 +93,11 @@ class FileDiff(models.Model):
     dest_detail = models.CharField(_("destination file details"),
                                    max_length=512)
     diff64 = Base64Field(_("diff"), db_column="diff_base64", blank=True)
-    diff_hash = models.ForeignKey('FileDiffData', null=True)
+    diff_hash = models.ForeignKey('FileDiffData', null=True, blank=True)
     binary = models.BooleanField(_("binary file"), default=False)
     parent_diff64 = Base64Field(_("parent diff"),
                                 db_column="parent_diff_base64", blank=True)
-    parent_diff_hash = models.ForeignKey('FileDiffData', null=True,
+    parent_diff_hash = models.ForeignKey('FileDiffData', null=True, blank=True,
                                          related_name='parent_filediff_set')
     status = models.CharField(_("status"), max_length=1, choices=STATUSES)
 
@@ -80,12 +124,10 @@ class FileDiff(models.Model):
         return self.source_revision == PRE_CREATION
 
     def _get_diff(self):
-        # If the diff is not in FileDiffData, it is in FileDiff.
         if not self.diff_hash:
-            return self.diff64
-        else:
-            # Data exists in FileDiffData, retrieve it.
-            return self.diff_hash.binary
+            self._migrate_diff_data()
+
+        return self.diff_hash.binary
 
     def _set_diff(self, diff):
         hashkey = self._hash_hexdigest(diff)
@@ -98,10 +140,13 @@ class FileDiff(models.Model):
     diff = property(_get_diff, _set_diff)
 
     def _get_parent_diff(self):
-        if not self.parent_diff_hash:
-            return self.parent_diff64
-        else:
+        if self.parent_diff64 and not self.parent_diff_hash:
+            self._migrate_diff_data()
+
+        if self.parent_diff_hash:
             return self.parent_diff_hash.binary
+        else:
+            return None
 
     def _set_parent_diff(self, parent_diff):
         if parent_diff != "":
@@ -114,16 +159,101 @@ class FileDiff(models.Model):
 
     parent_diff = property(_get_parent_diff, _set_parent_diff)
 
+    @property
+    def insert_count(self):
+        if not self.diff_hash:
+            self._migrate_diff_data()
+
+        if self.diff_hash.insert_count is None:
+            self._recalculate_line_counts(self.diff_hash)
+
+        return self.diff_hash.insert_count
+
+    @property
+    def delete_count(self):
+        if not self.diff_hash:
+            self._migrate_diff_data()
+
+        if self.diff_hash.delete_count is None:
+            self._recalculate_line_counts(self.diff_hash)
+
+        return self.diff_hash.delete_count
+
+    def set_line_counts(self, insert_count, delete_count):
+        """Sets the insert/delete line count on the FileDiff."""
+        if not self.diff_hash:
+            # This really shouldn't happen, but if it does, we should handle
+            # it gracefully.
+            logging.warning('Attempting to call set_line_counts on '
+                            'un-migrated FileDiff %s' % self.pk)
+            self._migrate_diff_data(False)
+
+        if (self.diff_hash.insert_count is not None and
+                self.diff_hash.insert_count != insert_count):
+            logging.warning('Attempting to override insert count on '
+                            'FileDiffData %s from %s to %s (FileDiff %s)'
+                            % (self.diff_hash.pk,
+                               self.diff_hash.insert_count,
+                               insert_count,
+                               self.pk))
+
+        if (self.diff_hash.delete_count is not None and
+                self.diff_hash.delete_count != delete_count):
+            logging.warning('Attempting to override delete count on '
+                            'FileDiffData %s from %s to %s (FileDiff %s)'
+                            % (self.diff_hash.pk,
+                               self.diff_hash.delete_count,
+                               delete_count,
+                               self.pk))
+
+        self.diff_hash.insert_count = insert_count
+        self.diff_hash.delete_count = delete_count
+        self.diff_hash.save()
+
     def _hash_hexdigest(self, diff):
         hasher = hashlib.sha1()
         hasher.update(diff)
         return hasher.hexdigest()
 
-    def __unicode__(self):
-        return u"%s (%s) -> %s (%s)" % (self.source_file, self.source_revision,
-                                        self.dest_file, self.dest_detail)
+    def _migrate_diff_data(self, recalculate_counts=True):
+        """Migrates the data stored in the FileDiff to a FileDiffData."""
+        needs_save = False
+
+        if not self.diff_hash:
+            logging.debug('Migrating FileDiff %s diff data to FileDiffData'
+                          % self.pk)
+            needs_save = True
+            self._set_diff(self.diff64)
+
+            if recalculate_counts:
+                self._recalculate_line_counts(self.diff_hash)
+
+        if self.parent_diff64 and not self.parent_diff_hash:
+            logging.debug('Migrating FileDiff %s parent_diff data to '
+                          'FileDiffData' % self.pk)
+            needs_save = True
+            self._set_parent_diff(self.parent_diff64)
+
+            if recalculate_counts:
+                self._recalculate_line_counts(self.parent_diff_hash)
+
+        if needs_save:
+            self.save()
+
+    def _recalculate_line_counts(self, diff_hash):
+        """Recalculates the line counts on the specified FileDiffData.
+
+        This requires that diff_hash is set. Otherwise, it will assert.
+        """
+        diff_hash.recalculate_line_counts(
+            self.diffset.repository.get_scmtool())
+
+    def __str__(self):
+        return "%s (%s) -> %s (%s)" % (self.source_file, self.source_revision,
+                                       self.dest_file, self.dest_detail)
 
 
+@python_2_unicode_compatible
 class DiffSet(models.Model):
     """
     A revisioned collection of FileDiffs.
@@ -144,6 +274,12 @@ class DiffSet(models.Model):
         help_text=_("The diff generator compatibility version to use. "
                     "This can and should be ignored."))
 
+    base_commit_id = models.CharField(
+        _('commit ID'), max_length=64, blank=True, null=True, db_index=True,
+        help_text=_('The ID/revision this change is built upon.'))
+
+    objects = DiffSetManager()
+
     def save(self, **kwargs):
         """
         Saves this diffset.
@@ -152,7 +288,7 @@ class DiffSet(models.Model):
         in the history, and will set it to on more than the most recent
         diffset otherwise.
         """
-        if self.revision == 0 and self.history != None:
+        if self.revision == 0 and self.history is not None:
             if self.history.diffsets.count() == 0:
                 # Start on revision 1. It's more human-grokable.
                 self.revision = 1
@@ -165,14 +301,15 @@ class DiffSet(models.Model):
 
         super(DiffSet, self).save()
 
-    def __unicode__(self):
-        return u"[%s] %s r%s" % (self.id, self.name, self.revision)
+    def __str__(self):
+        return "[%s] %s r%s" % (self.id, self.name, self.revision)
 
     class Meta:
         get_latest_by = 'revision'
         ordering = ['revision', 'timestamp']
 
 
+@python_2_unicode_compatible
 class DiffSetHistory(models.Model):
     """
     A collection of diffsets.
@@ -188,8 +325,8 @@ class DiffSetHistory(models.Model):
         null=True,
         default=None)
 
-    def __unicode__(self):
-        return u'Diff Set History (%s revisions)' % self.diffsets.count()
+    def __str__(self):
+        return 'Diff Set History (%s revisions)' % self.diffsets.count()
 
     class Meta:
         verbose_name_plural = "Diff set histories"

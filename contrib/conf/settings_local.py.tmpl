@@ -1,3 +1,6 @@
+from __future__ import unicode_literals
+
+
 # Database backend.  Any supported django database engine should work.
 DATABASES = {
     'default': {
@@ -37,7 +40,7 @@ CACHE_BACKEND = 'locmem:///'
 
 # Local time zone for this installation. All choices can be found here:
 # http://www.postgresql.org/docs/8.1/static/datetime-keywords.html#DATETIME-TIMEZONE-SET-TABLE
-TIME_ZONE = 'US/Pacific'
+TIME_ZONE = 'UTC'
 
 # Language code for this installation. All choices can be found here:
 # http://www.w3.org/TR/REC-html40/struct/dirlang.html#langcodes
@@ -74,10 +77,7 @@ DEBUG = True
 
 INTERNAL_IPS = "127.0.0.1"
 
-
-# Selenium testing configuration
-#TEST_DATABASE_NAME = "test.db"
-#SELENIUM_BROWSER_COMMAND = "*firefox"
-#SELENIUM_HOST = "localhost"
-#SELENIUM_PORT = 4444
-#SELENIUM_LIVE_SERVER_ADDRESS = "127.0.0.1"
+# GitHub client token
+# Request these at https://github.com/settings/applications/new
+#GITHUB_CLIENT_ID = ""
+#GITHUB_CLIENT_SECRET = ""

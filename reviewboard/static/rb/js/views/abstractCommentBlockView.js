@@ -3,8 +3,10 @@ RB.AbstractCommentBlockView = Backbone.View.extend({
         'click': '_onClicked'
     },
 
+    tooltipSides: 'lrbt',
+
     /*
-     * Disposes ScreenshotCommentBlockView.
+     * Disposes the comment block.
      *
      * This will remove the view and the tooltip.
      */
@@ -21,7 +23,7 @@ RB.AbstractCommentBlockView = Backbone.View.extend({
      */
     render: function() {
         this._$tooltip = $.tooltip(this.$el, {
-                side: 'lrbt'
+                side: this.tooltipSides
             })
             .addClass('comments');
 
@@ -42,27 +44,38 @@ RB.AbstractCommentBlockView = Backbone.View.extend({
      * be displayed.
      */
     positionCommentDlg: function(commentDlg) {
-        commentDlg.positionToSide(this.$el, {
+        commentDlg.positionBeside(this.$el, {
             side: 'r',
             fitOnScreen: true
         });
     },
 
     /*
+     * Positions the notification bubble around the comment block.
+     *
+     * This can be overridden to change where the bubble will be displayed.
+     * By default, it is centered over the block.
+     */
+    positionNotifyBubble: function($bubble) {
+        $bubble.move(Math.round((this.$el.width()  - $bubble.width())  / 2),
+                     Math.round((this.$el.height() - $bubble.height()) / 2));
+    },
+
+    /*
      * Notifies the user of some update. This notification appears in the
      * comment area.
      */
-    notify: function(text, cb) {
-        var offset = this.$el.offset(),
-            bubble = $('<div/>')
+    notify: function(text, cb, context) {
+        var $bubble = $('<div/>')
                 .addClass('bubble')
                 .appendTo(this.$el)
                 .text(text);
 
-        bubble
-            .css('opacity', 0)
-            .move(Math.round((this.$el.width()  - bubble.width())  / 2),
-                  Math.round((this.$el.height() - bubble.height()) / 2))
+        $bubble.css('opacity', 0);
+
+        this.positionNotifyBubble($bubble);
+
+        $bubble
             .animate({
                 top: '-=10px',
                 opacity: 0.8
@@ -72,10 +85,10 @@ RB.AbstractCommentBlockView = Backbone.View.extend({
                 top: '+=10px',
                 opacity: 0
             }, 350, 'swing', function() {
-                bubble.remove();
+                $bubble.remove();
 
                 if (_.isFunction(cb)) {
-                    cb();
+                    cb.call(context);
                 }
             });
     },
@@ -90,18 +103,20 @@ RB.AbstractCommentBlockView = Backbone.View.extend({
         var list = $('<ul/>'),
             draftComment = this.model.get('draftComment');
 
-        function addEntry(comment) {
+        function addEntry(text) {
             return $('<li>')
-                .text(comment.text.truncate())
+                .text(text.truncate())
                 .appendTo(list);
         }
 
         if (draftComment) {
-            addEntry(draftComment)
+            addEntry(draftComment.get('text'))
                 .addClass("draft");
         }
 
-        _.each(this.model.get('serializedComments'), addEntry);
+        _.each(this.model.get('serializedComments'), function(comment) {
+            addEntry(comment.text);
+        });
 
         this._$tooltip
             .empty()
@@ -130,31 +145,25 @@ RB.AbstractCommentBlockView = Backbone.View.extend({
             return;
         }
 
-        $.event.add(comment, 'textChanged', _.bind(this._updateTooltip, this));
+        comment.on('change:text', this._updateTooltip, this);
 
-        $.event.add(comment, 'deleted', function() {
-            $el.queue(function() {
-                self.notify('Comment Deleted', function() {
-                    $el.dequeue();
-                });
-            });
-        });
+        comment.on('destroy', function() {
+            this.notify(gettext('Comment Deleted'), function() {
+                /* Discard the comment block if empty. */
+                if (this.model.isEmpty()) {
+                    $el.fadeOut(350, function() { self.dispose(); });
+                } else {
+                    $el.removeClass('draft');
+                    this._updateTooltip();
+                }
+            }, this);
+        }, this);
 
-        $.event.add(comment, 'destroyed', function() {
-            /* Discard the comment block if empty. */
-            if (self.model.isEmpty()) {
-                $el.fadeOut(350, function() { self.dispose(); })
-            } else {
-                $el.removeClass('draft');
-                self._updateTooltip();
-            }
-        });
-
-        $.event.add(comment, 'saved', function() {
-            self._updateTooltip();
-            self.notify('Comment Saved');
-            showReviewBanner();
-        });
+        comment.on('saved', function() {
+            this._updateTooltip();
+            this.notify(gettext('Comment Saved'));
+            RB.DraftReviewBannerView.instance.show();
+        }, this);
 
         $el.addClass('draft');
     },

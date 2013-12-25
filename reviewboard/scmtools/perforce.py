@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import os
 import random
 import re
@@ -8,6 +10,8 @@ import subprocess
 import tempfile
 import time
 
+from django.utils.translation import ugettext_lazy as _
+from djblets.util.compat import six
 from djblets.util.filesystem import is_exe_in_path
 try:
     from P4 import P4Exception
@@ -15,11 +19,13 @@ except ImportError:
     pass
 
 from reviewboard.diffviewer.parser import DiffParser
-from reviewboard.scmtools.core import SCMTool, ChangeSet, \
-                                      HEAD, PRE_CREATION
-from reviewboard.scmtools.errors import SCMError, EmptyChangeSetError, \
-                                        AuthenticationError, \
-                                        RepositoryNotFoundError
+from reviewboard.scmtools.certs import Certificate
+from reviewboard.scmtools.core import (SCMTool, ChangeSet,
+                                       HEAD, PRE_CREATION)
+from reviewboard.scmtools.errors import (SCMError, EmptyChangeSetError,
+                                         AuthenticationError,
+                                         RepositoryNotFoundError,
+                                         UnverifiedCertificateError)
 
 
 STUNNEL_SERVER, STUNNEL_CLIENT = (0, 1)
@@ -56,9 +62,9 @@ class STunnelProxy(object):
         # It can sometimes be racy to immediately open the file. We therefore
         # have to wait a fraction of a second =/
         time.sleep(0.1)
-        f = open(filename)
-        self.pid = int(f.read())
-        f.close()
+        with open(filename) as f:
+            self.pid = int(f.read())
+            f.close()
         shutil.rmtree(tempdir)
 
     def shutdown(self):
@@ -82,12 +88,14 @@ class STunnelProxy(object):
 
 
 class PerforceClient(object):
-    def __init__(self, p4port, username, password, encoding, use_stunnel=False):
+    def __init__(self, p4port, username, password, encoding, use_stunnel=False,
+                 use_ticket_auth=False):
         self.p4port = p4port
         self.username = username
         self.password = password
         self.encoding = encoding
         self.use_stunnel = use_stunnel
+        self.use_ticket_auth = use_ticket_auth
         self.proxy = None
 
         import P4
@@ -104,20 +112,28 @@ class PerforceClient(object):
         This connects p4python to the remote server, optionally using a stunnel
         proxy.
         """
-        self.p4.user = self.username
-        self.p4.password = self.password
+        self.p4.user = self.username.encode('utf-8')
+        self.p4.password = self.password.encode('utf-8')
+
         if self.encoding:
-            self.p4.charset = self.encoding
+            self.p4.charset = self.encoding.encode('utf-8')
+
         self.p4.exception_level = 1
 
         if self.use_stunnel:
             # Spin up an stunnel client and then redirect through that
             self.proxy = STunnelProxy(STUNNEL_CLIENT, self.p4port)
             self.proxy.start_client()
-            self.p4.port = '127.0.0.1:%d' % self.proxy.port
+            p4_port = '127.0.0.1:%d' % self.proxy.port
         else:
-            self.p4.port = self.p4port
+            p4_port = self.p4port
+
+        self.p4.port = p4_port.encode('utf-8')
+
         self.p4.connect()
+
+        if self.use_ticket_auth:
+            self.p4.run_login()
 
     def _disconnect(self):
         """
@@ -139,11 +155,22 @@ class PerforceClient(object):
 
     @staticmethod
     def _convert_p4exception_to_scmexception(e):
-        error = str(e)
+        error = six.text_type(e)
+
         if 'Perforce password' in error or 'Password must be set' in error:
             raise AuthenticationError(msg=error)
-        elif 'check $P4PORT' in error:
+        elif 'SSL library must be at least version' in error:
+            raise SCMError(_('The specified Perforce port includes ssl:, but '
+                             'the p4python library was built without SSL '
+                             'support or the system library path is '
+                             'incorrect.'))
+        elif ('check $P4PORT' in error or
+              (error.startswith('[P4.connect()] TCP connect to') and
+               'failed.' in error)):
             raise RepositoryNotFoundError
+        elif "To allow connection use the 'p4 trust' command" in error:
+            fingerprint = error.split('\\n')[3]
+            raise UnverifiedCertificateError(Certificate(fingerprint=fingerprint))
         else:
             raise SCMError(error)
 
@@ -156,23 +183,26 @@ class PerforceClient(object):
             self._connect()
             result = worker()
             self._disconnect()
-        except P4Exception, e:
+        except P4Exception as e:
             self._disconnect()
             self._convert_p4exception_to_scmexception(e)
         except:
-            self._disconnect();
+            self._disconnect()
             raise
 
         return result
 
     def _get_changeset(self, changesetid):
-        return self.p4.run_describe('-s', str(changesetid))
+        return self.p4.run_describe('-s', six.text_type(changesetid))
 
     def get_changeset(self, changesetid):
         """
         Get the contents of a changeset description.
         """
         return self._run_worker(lambda: self._get_changeset(changesetid))
+
+    def get_info(self):
+        return self._run_worker(self.p4.run_info)
 
     def _get_pending_changesets(self, userid):
         changesets = self.p4.run_changes('-s', 'pending', '-u', userid)
@@ -193,34 +223,9 @@ class PerforceClient(object):
         else:
             depot_path = '%s#%s' % (path, revision)
 
-        args = ['p4', '-p', self.p4.port]
-        if self.p4.user:
-            args.extend(['-u', self.p4.user])
-        if self.p4.password:
-            args.extend(['-P', self.p4.password])
-        if self.p4.charset:
-            args.extend(['-C', self.p4.charset])
-        args.extend(['print', '-q', depot_path])
-
-        p = subprocess.Popen(args, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
-
-        result, errdata = p.communicate()
-        failure = p.poll()
-
-        if failure:
-            error = errdata.splitlines()
-            # The command-line output is the same as the contents of a
-            # P4Exception except they're prefixed with a line that says
-            # "Perforce client error:", and the lines of the error are indented
-            # with tabs.
-            if error[0].startswith('Perforce client error:'):
-                error = error[1:]
-            text = '\n'.join(line.lstrip('\t') for line in error)
-
-            self._convert_p4exception_to_scmexception(Exception(text))
-        else:
-            return result
+        res = self.p4.run_print('-q', depot_path)
+        if res:
+            return res[-1]
 
     def get_file(self, path, revision):
         """
@@ -244,6 +249,15 @@ class PerforceTool(SCMTool):
     name = "Perforce"
     uses_atomic_revisions = True
     supports_authentication = True
+    supports_ticket_auth = True
+    supports_pending_changesets = True
+    field_help_text = {
+        'path': _('The Perforce port identifier (P4PORT) for the repository. If '
+                  'your server is set up to use SSL (2012.1+), prefix the port '
+                  'with "ssl:". If your server connection is secured with '
+                  'stunnel (2011.x or older), prefix the port with '
+                  '"stunnel:".'),
+    }
     dependencies = {
         'modules': ['P4'],
     }
@@ -252,23 +266,26 @@ class PerforceTool(SCMTool):
         SCMTool.__init__(self, repository)
 
         self.client = self._create_client(
-            str(repository.mirror_path or repository.path),
-            str(repository.username),
-            str(repository.password),
-            str(repository.encoding))
+            six.text_type(repository.mirror_path or repository.path),
+            six.text_type(repository.username),
+            six.text_type(repository.password),
+            six.text_type(repository.encoding),
+            repository.extra_data.get('use_ticket_auth', False))
 
     @staticmethod
-    def _create_client(path, username, password, encoding=''):
+    def _create_client(path, username, password, encoding='',
+                       use_ticket_auth=False):
         if path.startswith('stunnel:'):
             path = path[8:]
             use_stunnel = True
         else:
             use_stunnel = False
-        return PerforceClient(path, username, password, encoding, use_stunnel)
+        return PerforceClient(path, username, password, encoding, use_stunnel,
+                              use_ticket_auth)
 
     @staticmethod
     def _convert_p4exception_to_scmexception(e):
-        error = str(e)
+        error = six.text_type(e)
         if 'Perforce password' in error or 'Password must be set' in error:
             raise AuthenticationError(msg=error)
         elif 'check $P4PORT' in error:
@@ -292,8 +309,13 @@ class PerforceTool(SCMTool):
         super(PerforceTool, cls).check_repository(path, username, password,
                                                   local_site_name)
 
-        client = cls._create_client(str(path), str(username), str(password))
-        client.get_changeset(1)
+        # 'p4 info' will succeed even if the server requires ticket auth and we
+        # don't run 'p4 login' first. We therefore don't go through all the
+        # trouble of handling tickets here.
+        client = cls._create_client(six.text_type(path),
+                                    six.text_type(username),
+                                    six.text_type(password))
+        client.get_info()
 
     def get_pending_changesets(self, userid):
         return self.client.get_pending_changesets(userid)
@@ -377,9 +399,34 @@ class PerforceTool(SCMTool):
     def get_parser(self, data):
         return PerforceDiffParser(data)
 
+    @classmethod
+    def accept_certificate(cls, path, local_site_name=None, certificate=None):
+        """Accepts the certificate for the given repository path."""
+        args = ['p4', '-p', path, 'trust', '-i', certificate.fingerprint]
+        p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
+        _, errdata = p.communicate()
+        failure = p.poll()
+
+        if failure:
+            raise IOError(errdata)
+
+        return certificate.fingerprint
+
+    def normalize_patch(self, patch, filename, revision):
+        # The patch contents may represent an unchanged, moved file, which
+        # isn't technically a valid diff, and will make patch mad. So, look
+        # for this and return a blank diff instead.
+        m = PerforceDiffParser.SPECIAL_REGEX.match(patch.strip())
+
+        if m and m.group(3) == 'MV':
+            return ''
+
+        return patch
+
 
 class PerforceDiffParser(DiffParser):
-    SPECIAL_REGEX = re.compile("^==== ([^#]+)#(\d+) ==([AMD])== (.*) ====$")
+    SPECIAL_REGEX = re.compile("^==== ([^#]+)#(\d+) ==([AMD]|MV)== (.*) ====$")
 
     def __init__(self, data):
         DiffParser.__init__(self, data)
@@ -399,8 +446,12 @@ class PerforceDiffParser(DiffParser):
                 info['binary'] = True
                 linenum += 1
 
-            if m.group(3) == 'D':
+            change_type = m.group(3)
+
+            if change_type == 'D':
                 info['deleted'] = True
+            elif change_type == 'MV':
+                info['moved'] = True
 
             # In this case, this *is* our diff header. We don't want to
             # let the next line's real diff header be a part of this one,
@@ -408,3 +459,15 @@ class PerforceDiffParser(DiffParser):
             return linenum
 
         return super(PerforceDiffParser, self).parse_diff_header(linenum, info)
+
+    def parse_special_header(self, linenum, info):
+        linenum = super(PerforceDiffParser, self).parse_special_header(
+            linenum, info)
+
+        if (linenum + 2 < len(self.lines) and
+            self.lines[linenum].startswith('Moved from:') and
+            self.lines[linenum + 1].startswith('Moved to:')):
+            info['moved'] = True
+            linenum += 2
+
+        return linenum

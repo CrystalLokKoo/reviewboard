@@ -1,37 +1,42 @@
+from __future__ import unicode_literals
+
 import os
 import re
 
 from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import Q
-from django.utils import timezone
+from django.utils import six, timezone
+from django.utils.encoding import python_2_unicode_compatible
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
-from djblets.util.db import ConcurrencyManager
-from djblets.util.fields import CounterField, JSONField, \
-                                ModificationTimestampField
-from djblets.util.misc import get_object_or_none
+from djblets.db.fields import (CounterField, JSONField,
+                               ModificationTimestampField)
+from djblets.db.managers import ConcurrencyManager
+from djblets.db.query import get_object_or_none
 from djblets.util.templatetags.djblets_images import crop_image, thumbnail
 
 from reviewboard.changedescs.models import ChangeDescription
 from reviewboard.diffviewer.models import DiffSet, DiffSetHistory, FileDiff
 from reviewboard.attachments.models import FileAttachment
 from reviewboard.reviews.errors import PermissionError
-from reviewboard.reviews.managers import DefaultReviewerManager, \
-                                         ReviewGroupManager, \
-                                         ReviewRequestManager, \
-                                         ReviewManager
-from reviewboard.reviews.signals import review_request_published, \
-                                        review_request_reopened, \
-                                        review_request_closed, \
-                                        reply_published, review_published
+from reviewboard.reviews.managers import (DefaultReviewerManager,
+                                          ReviewGroupManager,
+                                          ReviewRequestManager,
+                                          ReviewManager)
+from reviewboard.reviews.markdown_utils import markdown_escape
+from reviewboard.reviews.signals import (review_request_published,
+                                         review_request_reopened,
+                                         review_request_closed,
+                                         reply_published, review_published)
 from reviewboard.scmtools.errors import InvalidChangeNumberError
 from reviewboard.scmtools.models import Repository
 from reviewboard.site.models import LocalSite
 from reviewboard.site.urlresolvers import local_site_reverse
 
 
+@python_2_unicode_compatible
 class Group(models.Model):
     """
     A group of reviewers identified by a name. This is usually used to
@@ -43,7 +48,9 @@ class Group(models.Model):
     """
     name = models.SlugField(_("name"), max_length=64, blank=False)
     display_name = models.CharField(_("display name"), max_length=64)
-    mailing_list = models.EmailField(_("mailing list"), blank=True,
+    mailing_list = models.EmailField(
+        _("mailing list"),
+        blank=True,
         help_text=_("The mailing list review requests and discussions "
                     "are sent to."))
     users = models.ManyToManyField(User, blank=True,
@@ -79,14 +86,13 @@ class Group(models.Model):
         proper permissions, or the group is part of a LocalSite and the user is
         in the admin list.
         """
-        return (user.has_perm('reviews.change_group') or
-                (self.local_site and self.local_site.is_mutable_by(user)))
+        return user.has_perm('reviews.change_group', self.local_site)
 
-    def __unicode__(self):
+    def __str__(self):
         return self.name
 
     def get_absolute_url(self):
-        if self.local_site:
+        if self.local_site_id:
             local_site_name = self.local_site.name
         else:
             local_site_name = None
@@ -100,6 +106,7 @@ class Group(models.Model):
         ordering = ['name']
 
 
+@python_2_unicode_compatible
 class DefaultReviewer(models.Model):
     """
     A default reviewer entry automatically adds default reviewers to a
@@ -116,7 +123,9 @@ class DefaultReviewer(models.Model):
     Note that this is keyed off the same LocalSite as its "repository" member.
     """
     name = models.CharField(_("name"), max_length=64)
-    file_regex = models.CharField(_("file regex"), max_length=256,
+    file_regex = models.CharField(
+        _("file regex"),
+        max_length=256,
         help_text=_("File paths are matched against this regular expression "
                     "to determine if these reviewers should be added."))
     repository = models.ManyToManyField(Repository, blank=True)
@@ -130,10 +139,30 @@ class DefaultReviewer(models.Model):
 
     objects = DefaultReviewerManager()
 
-    def __unicode__(self):
+    def is_accessible_by(self, user):
+        "Returns whether the user can access this default reviewer."""
+        if self.local_site and not self.local_site.is_accessible_by(user):
+            return False
+
+        return True
+
+    def is_mutable_by(self, user):
+        """Returns whether the user can modify or delete this default reviewer.
+
+        Only those with the default_reviewer.change_group permission (such as
+        administrators) can modify or delete default reviewers not bound
+        to a LocalSite.
+
+        LocalSite administrators can modify or delete them on their LocalSites.
+        """
+        return user.has_perm('reviews.change_default_reviewer',
+                             self.local_site)
+
+    def __str__(self):
         return self.name
 
 
+@python_2_unicode_compatible
 class Screenshot(models.Model):
     """
     A screenshot associated with a review request.
@@ -167,11 +196,13 @@ class Screenshot(models.Model):
         output embedding the thumbnail.
         """
         url = self.get_thumbnail_url()
-        return mark_safe('<img src="%s" alt="%s" />' % (url, self.caption))
+        return mark_safe('<img src="%s" data-at2x="%s" alt="%s" />' %
+                         (url, thumbnail(self.image, '800x200'),
+                          escape(self.caption)))
     thumb.allow_tags = True
 
-    def __unicode__(self):
-        return u"%s (%s)" % (self.caption, self.image)
+    def __str__(self):
+        return "%s (%s)" % (self.caption, self.image)
 
     def get_review_request(self):
         if hasattr(self, '_review_request'):
@@ -232,6 +263,7 @@ class BaseReviewRequestDetails(models.Model):
     testing_done = models.TextField(_("testing done"), blank=True)
     bugs_closed = models.CharField(_("bugs"), max_length=300, blank=True)
     branch = models.CharField(_("branch"), max_length=300, blank=True)
+    rich_text = models.BooleanField(_("rich text"), default=False)
 
     def _get_review_request(self):
         raise NotImplementedError
@@ -363,36 +395,93 @@ class BaseReviewRequestDetails(models.Model):
             if group not in existing_groups:
                 self.target_groups.add(group)
 
-    def update_from_changenum(self, changenum):
+    def update_from_commit_id(self, commit_id):
         """Updates the data from a server-side changeset.
 
-        If changesets are supported on the repository, review request
-        information will be pulled from the changeset associated with
-        changenum.
-        """
-        changeset = self.repository.get_scmtool().get_changeset(changenum)
+        If the commit ID refers to a pending changeset on an SCM which stores
+        such things server-side (like perforce), the details like the summary
+        and description will be updated with the latest information.
 
+        If the change number is the commit ID of a change which exists on the
+        server, the summary and description will be set from the commit's
+        message, and the diff will be fetched from the SCM."""
+        scmtool = self.repository.get_scmtool()
+
+        changeset = None
+        if scmtool.supports_pending_changesets:
+            changeset = scmtool.get_changeset(commit_id, allow_empty=True)
+
+        if changeset and changeset.pending:
+            self.update_from_pending_change(commit_id, changeset)
+        elif self.repository.supports_post_commit:
+            self.update_from_committed_change(commit_id)
+        else:
+            if changeset:
+                raise InvalidChangeNumberError()
+            else:
+                raise NotImplementedError()
+
+    def update_from_pending_change(self, commit_id, changeset):
+        """Updates the data from a server-side pending changeset.
+
+        This will fetch the metadata from the server and update the fields on
+        the review request."""
         if not changeset:
             raise InvalidChangeNumberError()
 
         # If the SCM supports changesets, they should always include a number,
         # summary and description, parsed from the changeset description. Some
-        # specialized systems may support the other fields, but we don't want to
-        # clobber the user-entered values if they don't.
+        # specialized systems may support the other fields, but we don't want
+        # to clobber the user-entered values if they don't.
         if hasattr(self, 'changenum'):
-            self.changenum = changenum
+            self.update_commit_id(commit_id)
+
+        if self.rich_text:
+            description = markdown_escape(changeset.description)
+            testing_done = markdown_escape(changeset.testing_done)
+        else:
+            description = changeset.description
+            testing_done = changeset.testing_done
 
         self.summary = changeset.summary
-        self.description = changeset.description
+        self.description = description
 
-        if changeset.testing_done:
-            self.testing_done = changeset.testing_done
+        if testing_done:
+            self.testing_done = testing_done
 
         if changeset.branch:
             self.branch = changeset.branch
 
         if changeset.bugs_closed:
             self.bugs_closed = ','.join(changeset.bugs_closed)
+
+    def update_from_committed_change(self, commit_id):
+        """Updates from a committed change present on the server.
+
+        Fetches the commit message and diff from the repository and sets the
+        relevant fields.
+        """
+        commit = self.repository.get_change(commit_id)
+        summary, message = commit.split_message()
+
+        if hasattr(self, 'commit_id'):
+            self.commit = commit_id
+
+        self.summary = summary.strip()
+        if self.rich_text:
+            self.description = markdown_escape(message.strip())
+        else:
+            self.description = message.strip()
+
+        DiffSet.objects.create_from_data(
+            repository=self.repository,
+            diff_file_name='diff',
+            diff_file_contents=commit.diff.encode('utf-8'), ### XXX: check unicode
+            parent_diff_file_name=None,
+            parent_diff_file_contents=None,
+            diffset_history=self.diffset_history,
+            basedir='/',
+            request=None)
 
     def save(self, **kwargs):
         self.bugs_closed = self.bugs_closed.strip()
@@ -410,11 +499,11 @@ class BaseReviewRequestDetails(models.Model):
 
         return string
 
-    def __unicode__(self):
+    def __str__(self):
         if self.summary:
             return self.summary
         else:
-            return unicode(_('(no summary)'))
+            return six.text_type(_('(no summary)'))
 
     class Meta:
         abstract = True
@@ -452,6 +541,8 @@ class ReviewRequest(BaseReviewRequestDetails):
     public = models.BooleanField(_("public"), default=False)
     changenum = models.PositiveIntegerField(_("change number"), blank=True,
                                             null=True, db_index=True)
+    commit_id = models.CharField(_('commit ID'), max_length=64, blank=True,
+                                 null=True, db_index=True)
     repository = models.ForeignKey(Repository,
                                    related_name="review_requests",
                                    verbose_name=_("repository"),
@@ -481,7 +572,8 @@ class ReviewRequest(BaseReviewRequestDetails):
         related_name="review_request",
         verbose_name=_("screenshots"),
         blank=True)
-    inactive_screenshots = models.ManyToManyField(Screenshot,
+    inactive_screenshots = models.ManyToManyField(
+        Screenshot,
         verbose_name=_("inactive screenshots"),
         help_text=_("A list of screenshots that used to be but are no "
                     "longer associated with this review request."),
@@ -493,23 +585,36 @@ class ReviewRequest(BaseReviewRequestDetails):
         related_name="review_request",
         verbose_name=_("file attachments"),
         blank=True)
-    inactive_file_attachments = models.ManyToManyField(FileAttachment,
+    inactive_file_attachments = models.ManyToManyField(
+        FileAttachment,
         verbose_name=_("inactive file attachments"),
         help_text=_("A list of file attachments that used to be but are no "
                     "longer associated with this review request."),
         related_name="inactive_review_request",
         blank=True)
 
-    changedescs = models.ManyToManyField(ChangeDescription,
+    changedescs = models.ManyToManyField(
+        ChangeDescription,
         verbose_name=_("change descriptions"),
         related_name="review_request",
         blank=True)
     last_updated_by = models.ForeignKey(User, null=True)
 
+    depends_on = models.ManyToManyField('ReviewRequest',
+                                        blank=True, null=True,
+                                        verbose_name=_('Dependencies'),
+                                        related_name='blocks')
+
     # Review-related information
-    last_review_timestamp = models.DateTimeField(_("last review timestamp"),
-                                                 null=True, default=None,
-                                                 blank=True)
+
+    # The timestamp representing the last public activity of a review.
+    # This includes publishing reviews and manipulating issues.
+    last_review_activity_timestamp = models.DateTimeField(
+        _("last review activity timestamp"),
+        db_column='last_review_timestamp',
+        null=True,
+        default=None,
+        blank=True)
     shipit_count = CounterField(_("ship-it count"), default=0)
 
     local_site = models.ForeignKey(LocalSite, blank=True, null=True)
@@ -517,6 +622,33 @@ class ReviewRequest(BaseReviewRequestDetails):
 
     # Set this up with the ReviewRequestManager
     objects = ReviewRequestManager()
+
+    def get_commit(self):
+        if self.commit_id is not None:
+            return self.commit_id
+        elif self.changenum is not None:
+            self.commit_id = six.text_type(self.changenum)
+
+            # Update the state in the database, but don't save this
+            # model, or we can end up with some state (if we haven't
+            # properly loaded everything yet). This affects docs.db
+            # generation, and may cause problems in the wild.
+            ReviewRequest.objects.filter(pk=self.pk).update(
+                commit_id=six.text_type(self.changenum))
+
+            return self.commit_id
+
+        return None
+
+    def set_commit(self, commit_id):
+        try:
+            self.changenum = int(commit_id)
+        except (TypeError, ValueError):
+            pass
+
+        self.commit_id = commit_id
+
+    commit = property(get_commit, set_commit)
 
     def get_participants(self):
         """
@@ -526,7 +658,7 @@ class ReviewRequest(BaseReviewRequestDetails):
         # See the comment in Review.get_participants for this list
         # comprehension.
         return [u for review in self.reviews.all()
-                  for u in review.participants]
+                for u in review.participants]
 
     participants = property(get_participants)
 
@@ -550,7 +682,6 @@ class ReviewRequest(BaseReviewRequestDetails):
                 except IndexError:
                     # This visit doesn't exist, so bail.
                     pass
-
 
         return self.reviews.get_empty_query_set()
 
@@ -586,6 +717,10 @@ class ReviewRequest(BaseReviewRequestDetails):
             to one or more groups listed as requested reviewers (either by
             being a member of an invite-only group, or the group being public).
         """
+        # Users always have access to their own review requests.
+        if self.submitter == user:
+            return True
+
         if not self.public and not self.is_mutable_by(user):
             return False
 
@@ -618,10 +753,20 @@ class ReviewRequest(BaseReviewRequestDetails):
         return False
 
     def is_mutable_by(self, user):
-        "Returns true if the user can modify this review request"
+        """Returns whether the user can modify this review request."""
         return (self.submitter == user or
                 self.owner == user or
-                user.has_perm('reviews.can_edit_reviewrequest'))
+                user.has_perm('reviews.can_edit_reviewrequest',
+                              self.local_site))
+
+    def is_status_mutable_by(self, user):
+        """Returns whether the user can modify this review request's status."""
+        return (self.submitter == user or
+                user.has_perm('reviews.can_change_status', self.local_site))
+
+    def is_deletable_by(self, user):
+        """Returns whether the user can delete this review request."""
+        return user.has_perm('reviews.delete_reviewrequest')
 
     def get_draft(self, user=None):
         """
@@ -687,9 +832,11 @@ class ReviewRequest(BaseReviewRequestDetails):
         request is pending under SCM.
         """
         changeset = None
-        if self.changenum:
+        commit_id = self.commit
+        if (self.repository.get_scmtool().supports_pending_changesets and
+            commit_id is not None):
             changeset = self.repository.get_scmtool().get_changeset(
-                self.changenum, allow_empty=True)
+                commit_id, allow_empty=True)
 
         return changeset and changeset.pending
 
@@ -699,9 +846,10 @@ class ReviewRequest(BaseReviewRequestDetails):
         else:
             local_site_name = None
 
-        return local_site_reverse('review-request-detail',
-                                  local_site_name=local_site_name,
-                                  kwargs={'review_request_id': self.display_id})
+        return local_site_reverse(
+            'review-request-detail',
+            local_site_name=local_site_name,
+            kwargs={'review_request_id': self.display_id})
 
     def get_diffsets(self):
         """Returns a list of all diffsets on this review request."""
@@ -776,24 +924,30 @@ class ReviewRequest(BaseReviewRequestDetails):
     def can_publish(self):
         return not self.public or get_object_or_none(self.draft) is not None
 
-    def close(self, type, user=None, description=None):
+    def close(self, type, user=None, description=None, rich_text=False):
         """
         Closes the review request. The type must be one of
         SUBMITTED or DISCARDED.
         """
         if (user and not self.is_mutable_by(user) and
-            not user.has_perm("reviews.can_change_status")):
+            not user.has_perm("reviews.can_change_status", self.local_site)):
             raise PermissionError
 
         if type not in [self.SUBMITTED, self.DISCARDED]:
             raise AttributeError("%s is not a valid close type" % type)
 
         if self.status != type:
-            changedesc = ChangeDescription(public=True, text=description or "")
+            changedesc = ChangeDescription(public=True,
+                                           text=description or "",
+                                           rich_text=rich_text)
             changedesc.record_field_change('status', self.status, type)
             changedesc.save()
 
             self.changedescs.add(changedesc)
+
+            if type == self.SUBMITTED:
+                self.public = True
+
             self.status = type
             self.save(update_counts=True)
 
@@ -822,7 +976,7 @@ class ReviewRequest(BaseReviewRequestDetails):
         Reopens the review request for review.
         """
         if (user and not self.is_mutable_by(user) and
-            not user.has_perm("reviews.can_change_status")):
+            not user.has_perm("reviews.can_change_status", self.local_site)):
             raise PermissionError
 
         if self.status != self.PENDING_REVIEW:
@@ -848,20 +1002,19 @@ class ReviewRequest(BaseReviewRequestDetails):
         review_request_reopened.send(sender=self.__class__, user=user,
                                      review_request=self)
 
-    def update_changenum(self,changenum, user=None):
+    def update_commit_id(self, commit_id, user=None):
         if (user and not self.is_mutable_by(user)):
             raise PermissionError
 
-        self.changenum = changenum
-        self.save()
+        self.commit = commit_id
 
     def publish(self, user):
-        from reviewboard.accounts.models import LocalSiteProfile
-
         """
         Save the current draft attached to this review request. Send out the
         associated email. Returns the review request that was saved.
         """
+        from reviewboard.accounts.models import LocalSiteProfile
+
         if not self.is_mutable_by(user):
             raise PermissionError
 
@@ -875,19 +1028,18 @@ class ReviewRequest(BaseReviewRequestDetails):
         if self.public:
             Group.incoming_request_count.decrement(self.target_groups.all())
             LocalSiteProfile.direct_incoming_request_count.decrement(
-                    LocalSiteProfile.objects.filter(
-                        user__in=self.target_people.all(),
-                        local_site=self.local_site))
+                LocalSiteProfile.objects.filter(
+                    user__in=self.target_people.all(),
+                    local_site=self.local_site))
             LocalSiteProfile.total_incoming_request_count.decrement(
-                    LocalSiteProfile.objects.filter(
-                        Q(local_site=self.local_site) &
-                        Q(Q(user__review_groups__in= \
-                            self.target_groups.all()) |
-                          Q(user__in=self.target_people.all()))))
+                LocalSiteProfile.objects.filter(
+                    Q(local_site=self.local_site) &
+                    Q(Q(user__review_groups__in=self.target_groups.all()) |
+                      Q(user__in=self.target_people.all()))))
             LocalSiteProfile.starred_public_request_count.decrement(
-                    LocalSiteProfile.objects.filter(
-                        profile__starred_review_requests=self,
-                        local_site=self.local_site))
+                LocalSiteProfile.objects.filter(
+                    profile__starred_review_requests=self,
+                    local_site=self.local_site))
 
         draft = get_object_or_none(self.draft,
                                    Q(draft_creator=user) |
@@ -898,6 +1050,11 @@ class ReviewRequest(BaseReviewRequestDetails):
             draft.delete()
         else:
             changes = None
+
+        if not self.public and self.changedescs.count() == 0:
+            # This is a brand new review request that we're publishing
+            # for the first time. Set the creation timestamp to now.
+            self.time_added = timezone.now()
 
         self.public = True
         self.save(update_counts=True)
@@ -917,9 +1074,10 @@ class ReviewRequest(BaseReviewRequestDetails):
 
         local_site = self.local_site
         site_profile, site_profile_is_new = \
-            LocalSiteProfile.objects.get_or_create(user=self.submitter,
-                                              profile=profile,
-                                              local_site=local_site)
+            LocalSiteProfile.objects.get_or_create(
+                user=self.submitter,
+                profile=profile,
+                local_site=local_site)
 
         if site_profile_is_new:
             site_profile.save()
@@ -989,7 +1147,8 @@ class ReviewRequest(BaseReviewRequestDetails):
 
     class Meta:
         ordering = ['-last_updated', 'submitter', 'summary']
-        unique_together = (('changenum', 'repository'),
+        unique_together = (('commit_id', 'repository'),
+                           ('changenum', 'repository'),
                            ('local_site', 'local_id'))
         permissions = (
             ("can_change_status", "Can change status"),
@@ -1032,7 +1191,8 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                                          related_name="drafts",
                                          verbose_name=_("screenshots"),
                                          blank=True)
-    inactive_screenshots = models.ManyToManyField(Screenshot,
+    inactive_screenshots = models.ManyToManyField(
+        Screenshot,
         verbose_name=_("inactive screenshots"),
         related_name="inactive_drafts",
         blank=True)
@@ -1054,6 +1214,11 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
     repository = property(lambda self: self.review_request.repository)
     local_site = property(lambda self: self.review_request.local_site)
 
+    depends_on = models.ManyToManyField('ReviewRequest',
+                                        blank=True, null=True,
+                                        verbose_name=_('Dependencies'),
+                                        related_name='draft_blocks')
+
     # Set this up with a ConcurrencyManager to help prevent race conditions.
     objects = ConcurrencyManager()
 
@@ -1063,6 +1228,14 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
     def get_latest_diffset(self):
         """Returns the diffset for this draft."""
         return self.diffset
+
+    def is_accessible_by(self, user):
+        """Returns whether or not the user can access this draft."""
+        return self.is_mutable_by(user)
+
+    def is_mutable_by(self, user):
+        """Returns whether or not the user can modify this draft."""
+        return self.review_request.is_mutable_by(user)
 
     @staticmethod
     def create(review_request, user):
@@ -1083,18 +1256,24 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                     'testing_done': review_request.testing_done,
                     'bugs_closed': review_request.bugs_closed,
                     'branch': review_request.branch,
+                    'rich_text': review_request.rich_text,
                 })
 
         if draft.changedesc is None and review_request.public:
-            changedesc = ChangeDescription()
+            changedesc = ChangeDescription(rich_text=draft.rich_text)
             changedesc.last_modified_user = user
             changedesc.save()
             draft.changedesc = changedesc
 
         if draft_is_new:
-            map(draft.target_groups.add, review_request.target_groups.all())
-            map(draft.target_people.add, review_request.target_people.all())
             draft.owner = review_request.owner
+
+            for group in review_request.target_groups.all():
+                draft.target_groups.add(group)
+
+            for person in review_request.target_people.all():
+                draft.target_people.add(person)
+
             for screenshot in review_request.screenshots.all():
                 screenshot.draft_caption = screenshot.caption
                 screenshot.save()
@@ -1115,7 +1294,7 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                 attachment.save()
                 draft.inactive_file_attachments.add(attachment)
 
-            draft.save();
+            draft.save()
 
         return draft
 
@@ -1136,6 +1315,7 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
            *  'description'
            *  'testing_done'
            *  'bugs_closed'
+           *  'depends_on'
            *  'branch'
            *  'target_groups'
            *  'target_people'
@@ -1192,7 +1372,8 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                                                         name_field)
 
                 a.clear()
-                map(a.add, b.all())
+                for item in b.all():
+                    a.add(item)
 
         update_field(review_request, self, 'summary')
         update_field(review_request, self, 'description')
@@ -1204,6 +1385,8 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                     'target_groups', name_field="name")
         update_list(review_request.target_people, self.target_people,
                     'target_people', name_field="username")
+        update_list(review_request.depends_on, self.depends_on,
+                    'depends_on', name_field='summary')
 
         # Specifically handle bug numbers
         old_bugs = review_request.get_bug_list()
@@ -1217,9 +1400,8 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                 self.changedesc.record_field_change('bugs_closed',
                                                     old_bugs, new_bugs)
 
-
-        # Screenshots are a bit special.  The list of associated screenshots can
-        # change, but so can captions within each screenshot.
+        # Screenshots are a bit special.  The list of associated screenshots
+        # can change, but so can captions within each screenshot.
         screenshots = self.screenshots.all()
         caption_changes = {}
 
@@ -1251,8 +1433,8 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
 
         # There's no change notification required for this field.
         review_request.inactive_screenshots.clear()
-        map(review_request.inactive_screenshots.add,
-            self.inactive_screenshots.all())
+        for screenshot in self.inactive_screenshots.all():
+            review_request.inactive_screenshots.add(screenshot)
 
         # Files are treated like screenshots. The list of files can
         # change, but so can captions within each file.
@@ -1283,12 +1465,12 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
                 caption_changes
 
         update_list(review_request.file_attachments, self.file_attachments,
-                    'files', name_field="caption")
+                    'files', name_field="display_name")
 
         # There's no change notification required for this field.
         review_request.inactive_file_attachments.clear()
-        map(review_request.inactive_file_attachments.add,
-            self.inactive_file_attachments.all())
+        for attachment in self.inactive_file_attachments.all():
+            review_request.inactive_file_attachments.add(attachment)
 
         if self.diffset:
             if self.changedesc:
@@ -1312,12 +1494,14 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
 
         if self.changedesc:
             self.changedesc.timestamp = timezone.now()
+            self.changedesc.rich_text = self.rich_text
             self.changedesc.public = True
             self.changedesc.save()
             review_request.changedescs.add(self.changedesc)
 
         # Update the last updated user on to the review request.
         review_request.last_updated_by = user
+        review_request.rich_text = self.rich_text
         review_request.save()
 
         if send_notification:
@@ -1339,6 +1523,7 @@ class ReviewRequestDraft(BaseReviewRequestDetails):
         ordering = ['-last_updated']
 
 
+@python_2_unicode_compatible
 class BaseComment(models.Model):
     OPEN           = "O"
     RESOLVED       = "R"
@@ -1362,6 +1547,9 @@ class BaseComment(models.Model):
                                  verbose_name=_("reply to"))
     timestamp = models.DateTimeField(_('timestamp'), default=timezone.now)
     text = models.TextField(_("comment text"))
+    rich_text = models.BooleanField(_("rich text"), default=False)
+
+    extra_data = JSONField(null=True)
 
     # Set this up with a ConcurrencyManager to help prevent race conditions.
     objects = ConcurrencyManager()
@@ -1410,6 +1598,14 @@ class BaseComment(models.Model):
         return self.reply_to_id is not None
     is_reply.boolean = True
 
+    def is_accessible_by(self, user):
+        """Returns whether the user can access this comment."""
+        return self.get_review().is_accessible_by(user)
+
+    def is_mutable_by(self, user):
+        """Returns whether the user can modify this comment."""
+        return self.get_review().is_mutable_by(user)
+
     def public_replies(self, user=None):
         """
         Returns a list of public replies to this comment, optionally
@@ -1423,6 +1619,19 @@ class BaseComment(models.Model):
                                        Q(review__user=user))
         else:
             return self.replies.filter(review__public=True)
+
+    def can_change_issue_status(self, user):
+        """Returns whether the user can change the issue status.
+
+        Currently, this is allowed for:
+        - The user who owns the review request.
+        - The user who opened the issue (posted the comment).
+        """
+        if not (user and user.is_authenticated()):
+            return False
+
+        return (self.get_review_request().is_mutable_by(user) or
+                user == self.get_review().user)
 
     def save(self, **kwargs):
         self.timestamp = timezone.now()
@@ -1438,10 +1647,13 @@ class BaseComment(models.Model):
             if not review.public:
                 review.timestamp = self.timestamp
                 review.save()
+
+            ReviewRequest.objects.filter(pk=review.review_request_id).update(
+                last_review_activity_timestamp=self.timestamp)
         except Review.DoesNotExist:
             pass
 
-    def __unicode__(self):
+    def __str__(self):
         return self.text
 
     class Meta:
@@ -1475,14 +1687,14 @@ class Comment(BaseComment):
     last_line = property(lambda self: self.first_line + self.num_lines - 1)
 
     def get_absolute_url(self):
-        revision_path = str(self.filediff.diffset.revision)
+        revision_path = six.text_type(self.filediff.diffset.revision)
         if self.interfilediff:
             revision_path += "-%s" % self.interfilediff.diffset.revision
 
-        return "%sdiff/%s/?file=%s#file%sline%s" % \
-             (self.get_review_request().get_absolute_url(),
-              revision_path, self.filediff.id, self.filediff.id,
-              self.first_line)
+        return "%sdiff/%s/?file=%s#file%sline%s" % (
+            self.get_review_request().get_absolute_url(),
+            revision_path, self.filediff.id, self.filediff.id,
+            self.first_line)
 
 
 class ScreenshotComment(BaseComment):
@@ -1505,7 +1717,8 @@ class ScreenshotComment(BaseComment):
         """
         Returns the URL for the thumbnail, creating it if necessary.
         """
-        return crop_image(self.screenshot.image, self.x, self.y, self.w, self.h)
+        return crop_image(self.screenshot.image, self.x, self.y,
+                          self.w, self.h)
 
     def image(self):
         """
@@ -1520,10 +1733,43 @@ class FileAttachmentComment(BaseComment):
     """A comment on a file attachment."""
     anchor_prefix = "fcomment"
     comment_type = "file"
-    file_attachment = models.ForeignKey(FileAttachment,
-                                        verbose_name=_('file_attachment'),
-                                        related_name="comments")
-    extra_data = JSONField(null=True)
+
+    file_attachment = models.ForeignKey(
+        FileAttachment,
+        verbose_name=_('file attachment'),
+        related_name="comments")
+    diff_against_file_attachment = models.ForeignKey(
+        FileAttachment,
+        verbose_name=_('diff against file attachment'),
+        related_name="diffed_against_comments",
+        null=True,
+        blank=True)
+
+    @property
+    def thumbnail(self):
+        """Returns the thumbnail for this comment, if any, as HTML.
+
+        The thumbnail will be generated from the appropriate ReviewUI,
+        if there is one for this type of file.
+        """
+        if self.file_attachment.review_ui:
+            return self.file_attachment.review_ui.get_comment_thumbnail(self)
+        else:
+            return ''
+
+    def get_absolute_url(self):
+        """Returns the URL for this comment."""
+        if self.file_attachment.review_ui:
+            return self.file_attachment.review_ui.get_comment_link_url(self)
+        else:
+            return self.file_attachment.get_absolute_url()
+
+    def get_link_text(self):
+        """Returns the text for the link to the file."""
+        if self.file_attachment.review_ui:
+            return self.file_attachment.review_ui.get_comment_link_text(self)
+        else:
+            return self.file_attachment.filename
 
     def get_file(self):
         """
@@ -1534,6 +1780,7 @@ class FileAttachmentComment(BaseComment):
                                              escape(self.text))
 
 
+@python_2_unicode_compatible
 class Review(models.Model):
     """
     A review of a review request.
@@ -1545,11 +1792,15 @@ class Review(models.Model):
                              related_name="reviews")
     timestamp = models.DateTimeField(_('timestamp'), default=timezone.now)
     public = models.BooleanField(_("public"), default=False)
-    ship_it = models.BooleanField(_("ship it"), default=False,
+    ship_it = models.BooleanField(
+        _("ship it"),
+        default=False,
         help_text=_("Indicates whether the reviewer thinks this code is "
                     "ready to ship."))
     base_reply_to = models.ForeignKey(
-        "self", blank=True, null=True,
+        "self",
+        blank=True,
+        null=True,
         related_name="replies",
         verbose_name=_("Base reply to"),
         help_text=_("The top-most review in the discussion thread for "
@@ -1559,10 +1810,14 @@ class Review(models.Model):
     time_emailed = models.DateTimeField(_("time e-mailed"), null=True,
                                         default=None, blank=True)
 
-    body_top = models.TextField(_("body (top)"), blank=True,
+    body_top = models.TextField(
+        _("body (top)"),
+        blank=True,
         help_text=_("The review text shown above the diff and screenshot "
                     "comments."))
-    body_bottom = models.TextField(_("body (bottom)"), blank=True,
+    body_bottom = models.TextField(
+        _("body (bottom)"),
+        blank=True,
         help_text=_("The review text shown below the diff and screenshot "
                     "comments."))
 
@@ -1590,6 +1845,8 @@ class Review(models.Model):
         related_name="review",
         blank=True)
 
+    rich_text = models.BooleanField(_("rich text"), default=False)
+
     # XXX Deprecated. This will be removed in a future release.
     reviewed_diffset = models.ForeignKey(
         DiffSet, verbose_name="Reviewed Diff",
@@ -1615,12 +1872,23 @@ class Review(models.Model):
         # loop and concetenate the list, but this is more fun.
         return [self.user] + \
                [u for reply in self.replies.all()
-                  for u in reply.participants]
+                for u in reply.participants]
 
     participants = property(get_participants)
 
-    def __unicode__(self):
-        return u"Review of '%s'" % self.review_request
+    def is_accessible_by(self, user):
+        """Returns whether the user can access this review."""
+        return ((self.public or self.user == user or user.is_superuser) and
+                self.review_request.is_accessible_by(user))
+
+    def is_mutable_by(self, user):
+        """Returns whether the user can modify this review."""
+        return ((not self.public and
+                 (self.user == user or user.is_superuser)) and
+                self.review_request.is_accessible_by(user))
+
+    def __str__(self):
+        return "Review of '%s'" % self.review_request
 
     def is_reply(self):
         """
@@ -1702,13 +1970,15 @@ class Review(models.Model):
             comment.timetamp = self.timestamp
             comment.save()
 
-        # Update the last_updated timestamp on the review request.
-        self.review_request.last_review_timestamp = self.timestamp
+        # Update the last_updated timestamp and the last review activity
+        # timestamp on the review request.
+        self.review_request.last_review_activity_timestamp = self.timestamp
 
         # Update the last updated user on to the review request.
         self.review_request.last_updated_by = user
-
-        self.review_request.save()
+        self.review_request.save(
+            update_fields=['last_review_activity_timestamp',
+                           'last_updated_by'])
 
         # Atomicly update the shipit_count
         if self.ship_it:
@@ -1739,7 +2009,8 @@ class Review(models.Model):
         super(Review, self).delete()
 
     def get_absolute_url(self):
-        return "%s#review%s" % (self.review_request.get_absolute_url(), self.id)
+        return "%s#review%s" % (self.review_request.get_absolute_url(),
+                                self.pk)
 
     def get_all_comments(self, **kwargs):
         """Return a list of all contained comments of all types."""

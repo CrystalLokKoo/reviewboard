@@ -2,6 +2,158 @@
 
 
 /****************************************************************************
+ * Review-specific macros
+ ****************************************************************************/
+
+.rich-text-loading() {
+  color: transparent;
+  background: white url("../images/spinner.gif") no-repeat @box-padding @box-padding;
+}
+
+
+/****************************************************************************
+ * Actions
+ ****************************************************************************/
+.actions-container {
+  background: @review-request-actions-bg;
+  border-bottom: 1px @review-request-actions-border-color solid;
+  float: right;
+  width: 100%;
+  .border-radius(@box-inner-border-radius @box-inner-border-radius 0 0);
+
+  &>ul {
+    min-height: 2em;
+  }
+}
+
+
+.actions {
+  float: right;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+
+  a {
+    color: black;
+    cursor: pointer;
+    display: block;
+    text-decoration: none;
+    padding: 6px 10px;
+
+    border-left: 1px @review-request-action-border-color solid;
+  }
+
+  img {
+    vertical-align: middle;
+  }
+
+  li {
+    float: left;
+    margin: 0;
+    padding: 0;
+
+    &:hover {
+      background-color: @review-request-action-hover-bg;
+    }
+
+    &:active {
+      background-color: @review-request-action-active-bg;
+    }
+
+    &.primary {
+      background-color: @review-request-action-primary-bg;
+    }
+
+    &.primary:hover {
+      background-color: @review-request-action-primary-hover-bg;
+    }
+
+    &.primary:active {
+      background-color: @review-request-action-primary-active-bg;
+    }
+  }
+
+  .menu {
+    background: @review-request-action-menu-bg;
+    border: 1px @review-request-action-menu-border-color solid;
+    float: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: absolute;
+    z-index: @z-index-menu;
+    .border-radius(0 0 @box-border-radius @box-border-radius);
+    .box-shadow(@box-shadow);
+
+    li {
+      background: @review-request-action-bg;
+      border: 0;
+      float: none;
+      margin: 0;
+      padding: 0;
+
+      &:last-child {
+        .border-radius(0 0 @box-border-radius @box-border-radius);
+      }
+
+      &:hover {
+        background-color: @review-request-action-menu-item-hover-bg;
+      }
+
+      a {
+        color: black;
+        border: 0;
+        display: block;
+        margin: 0;
+        padding: 8px 10px;
+        text-decoration: none;
+      }
+    }
+  }
+}
+
+.actions>li:last-child {
+  .border-radius(0 @box-inner-border-radius 0 0);
+}
+
+
+/****************************************************************************
+ * Code Mirror
+ ****************************************************************************/
+.CodeMirror {
+  border: @textarea-border;
+  height: auto;
+  margin: @textarea-editor-margin;
+
+  .CodeMirror-lines {
+    padding: @textarea-editor-padding;
+  }
+
+  .CodeMirror-scroll {
+    overflow-y: hidden;
+    overflow-x: auto;
+  }
+
+  pre {
+    padding: 0;
+  }
+
+  .cm-header {
+    color: black;
+  }
+
+  .cm-comment {
+    color: #4444cc;
+  }
+
+  .cm-variable-2 {
+    color: black;
+  }
+}
+
+
+/****************************************************************************
  * Review Request Box
  ****************************************************************************/
 .inline-editor-form {
@@ -15,7 +167,8 @@
     margin-right: 6px;
   }
 
-  textarea + .buttons {
+  textarea + .buttons,
+  .markdown-editor + .buttons {
     margin-top: 6px;
   }
 
@@ -25,11 +178,13 @@
 }
 
 .review-request {
+  @details-width: 30em;
+
   background-color: #fefadf;
   background-image: url('../images/review_request_box_top_bg.png');
 
   label {
-    color: #575012;
+    color: @review-request-label-color;
     font-weight: bold;
   }
 
@@ -39,7 +194,7 @@
   }
 
   textarea {
-    border: 1px #b8b5a0 solid;
+    border: @textarea-border;
     height: 1.5em;
     overflow: hidden;
   }
@@ -59,21 +214,16 @@
       border: none;
     }
 
-    label {
-      display: block;
-      min-height: 15px;
-
-      img {
-        vertical-align: middle;
-      }
-    }
-
-    pre {
+    &>pre {
       .pre-wrap;
       background-color: #FFFFFF;
-      border: 1px #b8b5a0 solid;
-      margin: 5px 0 0 0;
-      padding: 10px;
+      border: @textarea-border;
+      margin: @textarea-editor-margin;
+      padding: @textarea-editor-padding;
+    }
+
+    .editable.loading {
+      .rich-text-loading();
     }
   }
 
@@ -107,13 +257,13 @@
       }
     }
 
-    img {
-      vertical-align: bottom;
-    }
-
     li {
       display: inline;
       padding-left: 8px;
+    }
+
+    .rb-icon {
+      vertical-align: bottom;
     }
   }
 
@@ -126,43 +276,107 @@
     margin-right: 10px;
   }
 
-  #details {
-    border-bottom: 1px #c2c1b0 solid;
-    border-spacing: 8px;
-    border-top: 1px #c2c1b0 solid;
+  #review_request_details {
+    border-spacing: 0px;
+    float: right;
+    width: @details-width;
     padding: @box-padding;
-    width: 100%;
 
-    .caption {
+    a {
+      color: @review-request-link-color;
+      text-decoration: none;
+    }
+
+    th {
       color: #39350b;
       font-weight: bold;
+      text-align: left;
       white-space: nowrap;
     }
 
-    .indented {
-      padding-left: 20px;
+    tbody {
+      td, th {
+        padding: 0;
+        vertical-align: top;
+      }
+
+      th, td span {
+        padding-top: 3px;
+      }
+
+      td {
+        padding-left: 1em;
+
+        span {
+          display: inline-block;
+          margin-right: 4px;
+        }
+
+        .editicon {
+          margin-left: 0;
+        }
+      }
+
+      th {
+        padding-bottom: 1.5em;
+        padding-left: 1em;
+        text-align: right;
+        white-space: nowrap;
+      }
     }
 
-    .label {
-      text-align: right;
-      white-space: nowrap;
+    thead {
+      &.review-request-info th {
+        padding-top: 0;
+      }
+
+      th {
+        color: @review-request-label-color;
+        font-size: 120%;
+        padding: 2em 0 1em 0;
+      }
     }
 
     #target_people .inactive {
       text-decoration: line-through;
     }
+  }
 
-    #review-request-warning {
-      display: none;
+  #review_request_extra {
+    clear: both;
 
-      td {
-        background-color: #F5A9A9;
-        border: 1px solid #FF0000;
-        font-weight: bold;
-        padding: 5px;
-        text-align: center;
+    h3 {
+      color: @review-request-label-color;
+      font-size: 120%;
+      margin: 0;
+      padding: 0;
+    }
+
+    label.textarea-label {
+      display: block;
+      min-height: 16px;
+
+      img {
+        vertical-align: middle;
       }
     }
+  }
+
+  #review_request_main {
+    margin-right: @details-width;
+
+    label {
+      font-size: 120%;
+    }
+  }
+
+  #review-request-warning {
+    background-color: @review-request-warning-bg;
+    border: 1px solid @review-request-warning-border-color;
+    display: none;
+    font-weight: bold;
+    padding: 5px;
+    text-align: center;
   }
 
   #diff_revision {
@@ -177,16 +391,25 @@
   }
 
   #summary_wrapper {
-    margin-right: 10em;
+    @line-height: 2.6em;
+
+    line-height: @line-height;
     padding: 0;
 
+    label, #summary {
+      font-size: 14px;
+    }
+
     label {
-      font-size: 130%;
+      margin-right: 0.5em;
+    }
+
+    .rb-icon-edit {
+      vertical-align: text-bottom;
     }
 
     #summary {
       display: inline;
-      font-size: 130%;
 
       a {
         color: black;
@@ -196,107 +419,9 @@
   }
 
   .actions-container {
-    background: @review-request-actions-bg;
-    border-bottom: 1px @review-request-actions-border-color solid;
-    float: right;
-    width: 100%;
-    .border-radius(@box-inner-border-radius @box-inner-border-radius 0 0);
-  }
-
-  .actions {
-    float: right;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    white-space: nowrap;
-
-    a {
-      color: black;
-      cursor: pointer;
-      display: block;
-      text-decoration: none;
-      padding: 4px 8px;
-
-      border-left: 1px @review-request-action-border-color solid;
+    .star {
+      margin: 5px 0 0 5px;
     }
-
-    img {
-      vertical-align: middle;
-    }
-
-    li {
-      float: left;
-      margin: 0;
-      padding: 0;
-
-      &:hover {
-        background-color: @review-request-action-hover-bg;
-      }
-
-      &:active {
-        background-color: @review-request-action-active-bg;
-      }
-
-      &.primary {
-        background-color: @review-request-action-primary-bg;
-      }
-
-      &.primary:hover {
-        background-color: @review-request-action-primary-hover-bg;
-      }
-
-      &.primary:active {
-        background-color: @review-request-action-primary-active-bg;
-      }
-    }
-
-    .menu-title {
-      background: url("../images/dropdown.png") no-repeat 100% 60%;
-      margin-right: 0.6em;
-      padding-right: 1.2em;
-    }
-
-    .menu {
-      background: @review-request-action-menu-bg;
-      border: 1px @review-request-action-menu-border-color solid;
-      float: none;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      position: absolute;
-      z-index: @z-index-menu;
-      .border-radius(0 0 @box-border-radius @box-border-radius);
-      .box-shadow(@box-shadow);
-
-      li {
-        background: @review-request-action-bg;
-        border: 0;
-        float: none;
-        margin: 0;
-        padding: 0;
-
-        &:last-child {
-          .border-radius(0 0 @box-border-radius @box-border-radius);
-        }
-
-        &:hover {
-          background-color: @review-request-action-menu-item-hover-bg;
-        }
-
-        a {
-          color: black;
-          border: 0;
-          display: block;
-          margin: 0;
-          padding: 5px 10px;
-          text-decoration: none;
-        }
-      }
-    }
-  }
-
-  .actions>li:last-child {
-    .border-radius(0 @box-inner-border-radius 0 0);
   }
 
   #updated_time, #created_time {
@@ -329,10 +454,6 @@
 
 .box {
   &.collapsed {
-    .collapse-button {
-      background: url('../images/expand.png') no-repeat;
-    }
-
     .body {
       display: none;
     }
@@ -343,18 +464,20 @@
   }
 
   .collapse-button {
-    background: url('../images/collapse.png') no-repeat;
+    border: 1px #333333 solid;
     cursor: pointer;
     float: left;
-    height: 18px;
-    width: 18px;
-    padding-right: 7px;
+    margin-right: 0.5em;
+    margin-top: -1px;
+    padding: 0;
   }
 }
 
 .review {
-  background-color: #e9edf5;
-  background-image: url('../images/review_box_top_bg.png');
+  .box {
+    background-color: #e9edf5;
+    background-image: url('../images/review_box_top_bg.png');
+  }
 
   .banner {
     margin-top: 10px;
@@ -388,6 +511,7 @@
 
   .box-inner {
     background-image: url('../images/review_box_bottom_bg.png') !important;
+    min-height: 32px;
   }
 
   .controls {
@@ -405,11 +529,9 @@
     }
   }
 
-  .comments {
+  .comments, .review-comments {
     border: 0;
-  }
 
-  .diff-comments {
     dd {
       margin-bottom: 20px;
     }
@@ -421,7 +543,6 @@
     .filename a {
       color: black;
       font-weight: bold;
-      text-decoration: underline;
     }
 
     .file-attachment {
@@ -450,6 +571,10 @@
         font-weight: bold;
         margin: 0;
         vertical-align: middle;
+      }
+
+      .thumbnail {
+        margin-top: 0.5em;
       }
     }
 
@@ -498,7 +623,7 @@
     margin: 20px 0 0 0;
     padding: 0;
 
-    .reply-comment {
+    &>li {
       display: inline;
 
       &.draft {
@@ -562,8 +687,8 @@
   tbody {
     background: #F3F3F3 url("../images/spinner.gif") no-repeat center center;
 
-    th {
-      background: transparent;
+    td {
+      padding: 1em;
     }
   }
 }
@@ -574,15 +699,21 @@
  ****************************************************************************/
 #changedescription {
   .pre-wrap;
-  background-color: #FFFFFF;
-  border: 1px #b8b5a0 solid;
-  margin: 5px 0 0 0;
-  padding: 10px;
+  background-color: @textarea-editor-background;
+  border: @textarea-border;
+  margin: @textarea-editor-margin;
+  padding: @textarea-editor-padding;
+
+  &.loading {
+    .rich-text-loading();
+  }
 }
 
 .changedesc {
-  background-color: #fefadf;
-  background-image: url('../images/review_request_box_top_bg.png');
+  &.box {
+    background-color: #fefadf;
+    background-image: url('../images/review_request_box_top_bg.png');
+  }
 
   .body {
     background-color: #FAFAFA;
@@ -602,8 +733,8 @@
         }
 
         pre {
-          border: 1px #b8b5a0 solid;
-          padding: 10px;
+          border: @textarea-border;
+          padding: @textarea-editor-padding;
           font-size: 9pt;
         }
       }
@@ -616,6 +747,7 @@
 
   .box-inner {
     background-image: url('../images/review_request_box_bottom_bg.png') !important;
+    min-height: 32px;
   }
 
   .header {
@@ -679,23 +811,44 @@
     margin-top: 10px;
   }
 
-  pre.editable {
-    .pre-wrap;
-    background-color: #FFFFFF;
-    border: 1px #b8b5a0 solid;
-    margin: 10px 0;
-    padding: 10px;
+  .edit-field {
+    margin: 1em 0;
+
+    textarea {
+      background-color: @textarea-editor-background;
+      border: @textarea-border;
+      font-size: @textarea-font-size;
+      margin: @textarea-editor-margin;
+      padding: @textarea-editor-padding;
+      width: 100%;
+      height: 1.5em;
+      .box-sizing(border-box);
+    }
   }
 
-  textarea {
-    border: 1px #b8b5a0 solid;
-    height: 1.5em;
-    overflow: hidden;
-    width: 100%;
+  .spinner {
+    background: url("../images/spinner.gif") no-repeat center center;
+    height: 16px;
+    margin: 3em auto;
   }
 
   #review-form-comments {
     background: none;
+
+    .comments {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+
+      li {
+        margin: 2em 0;
+        padding: 0;
+
+        .edit-fields {
+          margin-left: 4em;
+        }
+      }
+    }
   }
 }
 
@@ -708,7 +861,6 @@
   border: 1px black solid;
   display: block;
   float: left;
-  height: 13em;
   position: relative;
   margin: 0 2em 2em 0;
   .border-radius(@box-border-radius);
@@ -725,8 +877,9 @@
 
   .file-header {
     background: white;
-    padding: 0.5em 10em 0.5em 0.5em;
+    padding: 0 10em 0 0.5em;
     line-height: 2.5em;
+    height: 2.5em;
     white-space: nowrap;
     .border-radius(@box-border-radius @box-border-radius 0 0);
 
@@ -743,26 +896,61 @@
 
   .file-thumbnail-container {
     background: white;
-    height: 6em;
-    padding: 0 1em;
-    padding-bottom: 1em;
+    height: 100px;
+    padding: 0 1em 1em 1em;
     text-align: center;
 
-    .file-thumbnail {
-      border: 0;
+    a {
+      color: black;
+      text-decoration: none;
+    }
+
+    .thumbnail-properties () {
+      max-height: 100px;
+      max-width: 25em;
       margin: 0;
-      max-height: 6em;
-      max-width: 18em;
-      overflow: hidden;
       padding: 0;
+    }
+
+    .file-thumbnail-overlay {
+      .thumbnail-properties();
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: @z-index-event-overlay;
+    }
+
+    .file-thumbnail {
+      .thumbnail-properties();
+      border: 0;
+      overflow: hidden;
       text-align: left;
       white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    .file-thumbnail-clipped {
+      .thumbnail-properties();
+      border: 0;
+      overflow: hidden;
+      text-align: left;
+      font-size: 8pt;
+
+      /* Override the styling used for the <pre>s for fields. */
+      pre {
+        background-color: transparent;
+        border: 0;
+        margin: 0;
+        padding: 0;
+      }
     }
   }
 
   .file-caption {
     border-top: 1px #CCCCCC solid;
     line-height: 2.5em;
+    height: 2.5em;
     padding: 0 0.5em;
     text-align: center;
     .border-radius(0 0 7px 7px);
@@ -770,10 +958,19 @@
     a {
       color: black;
       text-decoration: none;
+
+      &.empty-caption {
+        color: gray;
+        font-style: italic;
+      }
     }
 
-    img {
-      vertical-align: middle;
+    .inline-editor-form > input {
+      margin-top: 0.4em;
+    }
+
+    .rb-icon-edit {
+      vertical-align: text-bottom;
     }
   }
 }
@@ -820,7 +1017,7 @@
     text-decoration: none;
   }
 
-  .screenshot {
+  .image {
     border: 1px #999999 solid;
     border-bottom: 0;
     cursor: pointer;
@@ -841,55 +1038,6 @@
   }
 }
 
-.screenshot-review-ui {
-  border: 1px #777777 solid;
-  cursor: crosshair;
-  padding: 10px;
-  position: relative;
-
-  img {
-    display: block;
-    margin: 0 auto;
-    padding: 0;
-  }
-
-  .selection {
-    border: 1px #a1c0e3 solid;
-    position: absolute;
-
-    &.draft {
-      border: 1px #aceb6f solid;
-
-      .selection-flag {
-        background: #aceb6f;
-      }
-    }
-  }
-
-  .selection-flag {
-    background-color: #a1c0e3;
-    cursor: pointer;
-    height: 2em;
-    left: 0px;
-    line-height: 170%;
-    text-align: center;
-    top: 0px;
-    width: 2em;
-  }
-
-  .selection-container {
-    position: absolute;
-    margin: 0;
-    padding: 0;
-    z-index: @z-index-event-overlay;
-  }
-
-  .selection-rect {
-    border: 1px #ff0000 dashed;
-    position: absolute;
-  }
-}
-
 
 /****************************************************************************
  * Screenshot Thumbnails
@@ -902,46 +1050,6 @@
     border: 2px green dashed;
     display: block;
     margin: 0;
-  }
-}
-
-.drop-indicator {
-  .opacity(80);
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background: black;
-  text-align: center;
-  vertical-align: middle;
-  z-index: @z-index-page-overlay;
-  color: #DDDDDD;
-
-  .dropbox {
-    border: 1px #CCCCCC dashed;
-    display: block;
-    position: relative;
-    text-align: center;
-
-    &.hover {
-      background: #333333;
-    }
-
-    h1 {
-      font-size: 200%;
-      margin: 0 auto;
-      padding: 0;
-      position: absolute;
-      text-align: center;
-      top: 50%;
-      width: 100%;
-    }
-
-    h2 {
-      font-size: 200%;
-      vertical-align: middle;
-    }
   }
 }
 
@@ -969,10 +1077,11 @@
 /****************************************************************************
  * Comment detail dialog
  ****************************************************************************/
-#comment-detail {
+.comment-dlg {
   border: 1px black solid;
-  margin-top: 8px;
   cursor: default;
+  margin-top: 8px;
+  position: absolute;
 
   form {
     background-color: #aceb6f;
@@ -1017,7 +1126,7 @@
     font-style: italic;
   }
 
-  #review_comments {
+  .other-comments {
     background-color: #a1c0e3;
     border-right: 1px black solid;
     padding: 6px;
@@ -1071,65 +1180,84 @@
       }
     }
   }
+
+  .ui-icon-gripsmall-diagonal-se {
+    background: url('../images/resize-grip.png') no-repeat top left;
+  }
 }
 
 .issue-state {
-  font-size: 95%;
+  @issue-state-height: 26px;
+
   font-weight: bold;
-  min-height: 26px;
-  padding: 0.3em 0.4em 0.3em 2.5em;
+  line-height: @issue-state-height;
+  min-height: @issue-state-height;
+  padding: 0.3em 0.6em 0.3em 0.6em;
   position: relative;
 
+  input, .back-to-issue-summary {
+    /*
+     * This keeps a consistency with the browser. By default, Chrome uses
+     * a margin of 2px, and changing it to 0 actually makes things look
+     * off-center.
+     */
+    margin: 2px 2px 2px 0.2em;
+    vertical-align: middle;
+  }
+
+  .issue-container {
+    position: relative;
+  }
+
+  .rb-icon {
+    margin: 0 0.2em;
+  }
+
   &.dropped {
-    background: url('../images/closed_issue.png') #EAEAEA no-repeat 5px 50%;
-    border: 1px solid #D0D0D0;
+    background: @issue-discarded-bg;
+    border: 1px solid @issue-discarded-border-color;
+
+    .back-to-issue-summary, .back-to-issue-summary:visited {
+      color: @issue-discarded-link-color;
+    }
   }
 
   &.open {
-    background: url('../images/open_issue.png') #fff47c no-repeat 5px 50%;
-    border: 1px solid #a89c00;
+    background: @issue-opened-bg;
+    border: 1px solid @issue-opened-border-color;
+
+    .back-to-issue-summary, .back-to-issue-summary:visited {
+      color: @issue-opened-link-color;
+    }
   }
 
   &.resolved {
-    background: url('../images/tick.png') #FAFAFA no-repeat 5px 50%;
+    background: @issue-resolved-bg;
+    border: 1px solid @issue-resolved-border-color;
+
+    .back-to-issue-summary, .back-to-issue-summary:visited {
+      color: @issue-resolved-link-color;
+    }
   }
 
   .back-to-issue-summary {
-    background-color: #FFF;
-    border: 1px solid #888;
-    color: #2828EE;
-    font-size: 8pt;
+    font-size: 13px;
     font-weight: normal;
-    padding: 5px;
-    position: absolute;
     text-decoration: none;
-    right: 3px;
+    padding: 0 0.5em;
+    position: absolute;
+    right: 0;
+    height: 24px;
+    line-height: 24px;
 
-    &:visited {
-      color: #2828EE;
+    &:hover {
+      text-decoration: underline;
     }
-
-    img {
-      float: left;
-      height: 14px;
-    }
-
-    span {
-      float: right;
-      padding: 1px 6px;
-    }
-
-    .clear {
-      clear: both;
-    }
-  }
-
-  .issue-button {
-    margin-left: 5px;
   }
 
   .issue-message {
-    line-height: 260%;
+    margin-right: 0.5em;
+    vertical-align: middle;
   }
 }
 
@@ -1148,6 +1276,21 @@
 #draft-banner {
   .border-radius(@box-border-radius);
   .box-shadow(@box-shadow);
+}
+
+#draft-banner,
+#discard-banner,
+#submitted-banner {
+  label {
+    /* Keep the label from shifting when the pencil icon is hidden/shown. */
+    display: block;
+    min-height: 15px;
+    vertical-align: top;
+  }
+
+  &>p {
+    margin: 1em 0 0 0;
+  }
 }
 
 #review-banner {
@@ -1224,30 +1367,13 @@
   .border-radius(8px);
 }
 
-/* !(*%!(&^ (see http://www.positioniseverything.net/easyclearing.html) */
-.clearfix {
-  display: inline-block;
-
-  &:after {
-    clear: both;
-    content: ".";
-    display: block;
-    height: 0;
-    visibility: hidden;
-  }
-}
-
-/* Hides from IE-mac \*/
-* html .clearfix {height: 1%;}
-.clearfix {display: block;}
-/* End hide from IE-mac */
-
 
 /****************************************************************************
  * Issue Summary
  ****************************************************************************/
 
 .issue-table-wrapper {
+  clear: both;
   margin: 8px 9px 14px 9px;
 }
 
@@ -1257,9 +1383,15 @@
 
   tr {
     td {
-      border-width: 1px 0;
+      border-width: 0 0 1px 0;
       border-style: solid;
-      padding: 2px 5px;
+      padding: 5px 5px;
+      vertical-align: top;
+
+      a {
+        color: #0000CC;
+        text-decoration: none;
+      }
     }
 
     &.hidden {
@@ -1284,7 +1416,7 @@
       }
     }
 
-    .comment-id-header {
+    .description-header {
       border-left-width: 1px;
     }
 
@@ -1298,8 +1430,9 @@
       border-right-width: 1px;
     }
 
-    .comment-id {
+    .summary-table-description {
       border-left-width: 1px;
+      width: 100%;
     }
 
     &.open {
@@ -1319,7 +1452,7 @@
     &.resolved {
       td {
         background-color: #FFF;
-        border-color: #BBB;
+        border-color: #AAA;
       }
     }
 
@@ -1353,29 +1486,196 @@
   }
 }
 
-.counters {
-  display: inline;
-  font-size: 12px;
-  text-align: right;
-  float: left;
+#issue-summary {
+  .header {
+    padding-bottom: 0;
+    position: relative;
 
-  div {
-    margin-right: 3px;
-    float: left;
-  }
+    .counters {
+      position: absolute;
+      bottom: 0;
+      right: @box-padding;
 
-  .counter {
-    margin-left: 4px;
+      .counter {
+        margin-left: 4px;
+
+        &.total {
+          label, span {
+            font-weight: bold;
+          }
+        }
+
+        label {
+          color: black;
+          font-weight: normal;
+          margin-right: 3px;
+        }
+      }
+    }
+
+    .filters {
+      margin: 3px 0 0 0;
+
+      .filter-wrapper {
+        display: inline;
+        margin: 0 4px;
+      }
+    }
   }
 }
 
-.filters {
-  margin: 3px 0 0 0;
 
-  .filter-wrapper {
-    float: left;
-    margin: 0 4px;
+/****************************************************************************
+ * Rendered UI
+ ****************************************************************************/
+
+.text-review-ui-container {
+  padding-left: 8px;
+
+  &:hover {
+    background-color: #F0F0F0;
+  }
+
+  .commentflag .commentflag-inner {
+    background-color: @comment-flag-color;
+  }
+
+  .commentflag .commentflag-inner,
+  .commentflag .commentflag-inner:hover {
+    background-color: @comment-flag-hover-color;
+  }
+
+  .commentflag.draft .commentflag-inner,
+  .commentflag.draft .commentflag-inner:hover {
+    background-color: @comment-flag-draft-hover-color;
   }
 }
+
+
+/****************************************************************************
+ * Rich text
+ ****************************************************************************/
+
+/*
+ * Note that there's similar styling code in
+ * reviewboard/notifications/templatetags/markdown_email.py. If you make
+ * substantial changes here, you may also want to make changes there.
+ */
+
+.rich-text {
+  line-height: @textarea-line-height;
+  .box-sizing(border-box);
+
+  * {
+    margin: 0;
+    padding: 0;
+
+    line-height: inherit;
+    text-rendering: inherit;
+    white-space: normal;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-size: 100%;
+  }
+
+  ul, ol {
+    line-height: 0;
+    margin: 0;
+    padding: 0;
+
+    ul, ol {
+      margin-left: 2ch;
+    }
+
+    &:last-child li:last-child p:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  ol {
+    list-style-position: inside;
+  }
+
+  ul {
+    list-style-position: outside;
+    list-style: disc;
+    margin-left: 2ch;
+  }
+
+  ol, ul, pre {
+    & + pre {
+      /*
+       * There are two blank lines between lists and code blocks, which won't
+       * otherwise be preserved. Try to keep that same spacing.
+       */
+      margin-top: @textarea-line-height;
+    }
+  }
+
+  li {
+    line-height: @textarea-line-height;
+
+    li:first-child {
+      margin-top: @textarea-line-height;
+    }
+
+    p {
+      margin-bottom: @textarea-line-height;
+    }
+  }
+
+  table {
+    th, td {
+      border-bottom: 1px solid #bbb;
+      padding: 0.2em 1em;
+    }
+  }
+
+  code {
+    color: #4444cc;
+  }
+
+  pre {
+    .pre-wrap;
+
+    * {
+      .pre-wrap;
+    }
+
+    code {
+      border: none;
+      color: black;
+      display: block;
+      margin-left: 2.5em;
+      .box-sizing(border-box);
+
+      .linenums {
+        /* On Firefox, we'll be one pixel too far to the right, so adjust it. */
+        -moz-margin-start: -1px;
+
+        li {
+          list-style: none;
+          margin: 0;
+
+          p {
+            margin: 0;
+          }
+        }
+      }
+    }
+  }
+
+  blockquote {
+    border-left: 1px solid #bbb;
+    padding-left: 1em;
+    margin-left: 0.5em;
+  }
+
+  hr {
+    border: 1px solid #ddd;
+  }
+}
+
 
 // vim: set et ts=2 sw=2:

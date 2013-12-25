@@ -1,5 +1,11 @@
+from __future__ import unicode_literals
+
 import logging
 import re
+
+from djblets.util.compat.six.moves import range
+
+from reviewboard.diffviewer.errors import DiffParserError
 
 
 class File(object):
@@ -13,12 +19,8 @@ class File(object):
         self.binary = False
         self.deleted = False
         self.moved = False
-
-
-class DiffParserError(Exception):
-    def __init__(self, msg, linenum):
-        Exception.__init__(self, msg)
-        self.linenum = linenum
+        self.insert_count = 0
+        self.delete_count = 0
 
 
 class DiffParser(object):
@@ -58,18 +60,28 @@ class DiffParser(object):
                 self.files.append(file)
                 i = next_linenum
             else:
-                line = self.lines[i] + '\n'
-
                 if file:
-                    file.data += line
+                    i = self.parse_diff_line(i, file)
                 else:
-                    preamble += line
-
-                i += 1
+                    preamble += self.lines[i] + '\n'
+                    i += 1
 
         logging.debug("DiffParser.parse: Finished parsing diff.")
 
         return self.files
+
+    def parse_diff_line(self, linenum, info):
+        line = self.lines[linenum]
+
+        if info.origFile is not None and info.newFile is not None:
+            if line.startswith('-'):
+                info.delete_count += 1
+            elif line.startswith('+'):
+                info.insert_count += 1
+
+        info.data += line + '\n'
+
+        return linenum + 1
 
     def parse_change_header(self, linenum):
         """
@@ -88,7 +100,7 @@ class DiffParser(object):
         # If we have enough information to represent a header, build the
         # file to return.
         if ('origFile' in info and 'newFile' in info and
-            'origInfo' in info and 'newInfo' in info):
+                'origInfo' in info and 'newInfo' in info):
             if linenum < len(self.lines):
                 linenum = self.parse_after_headers(linenum, info)
 
@@ -96,18 +108,19 @@ class DiffParser(object):
                     return linenum, None
 
             file = File()
-            file.binary   = info.get('binary', False)
-            file.deleted  = info.get('deleted', False)
-            file.origFile = info.get('origFile')
-            file.newFile  = info.get('newFile')
-            file.origInfo = info.get('origInfo')
-            file.newInfo  = info.get('newInfo')
+            file.binary          = info.get('binary', False)
+            file.deleted         = info.get('deleted', False)
+            file.moved           = info.get('moved', False)
+            file.origFile        = info.get('origFile')
+            file.newFile         = info.get('newFile')
+            file.origInfo        = info.get('origInfo')
+            file.newInfo         = info.get('newInfo')
             file.origChangesetId = info.get('origChangesetId')
 
             # The header is part of the diff, so make sure it gets in the
             # diff content.
             file.data = ''.join([
-                self.lines[i] + '\n' for i in xrange(start, linenum)
+                self.lines[i] + '\n' for i in range(start, linenum)
             ])
 
         return linenum, file
@@ -198,3 +211,11 @@ class DiffParser(object):
         The returned diff as composed of all FileDiffs in the provided diffset.
         """
         return ''.join([filediff.diff for filediff in diffset.files.all()])
+
+    def get_orig_commit_id(self):
+        """Returns the commit ID of the original revision for the diff.
+
+        This is overridden by tools that only use commit IDs, not file
+        revision IDs.
+        """
+        return None

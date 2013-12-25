@@ -24,19 +24,23 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+from __future__ import unicode_literals
 
-from django.conf.urls.defaults import include, patterns, url
+from django.conf.urls import include, patterns, url
 from django.contrib import admin
+from django.views.generic import RedirectView
 
 from reviewboard.admin import forms
 
 
 NEWS_FEED = "http://www.reviewboard.org/news/feed/"
 
-settings_urlpatterns = patterns('reviewboard.admin.views',
+settings_urlpatterns = patterns(
+    'reviewboard.admin.views',
+
     url(r'^general/$', 'site_settings',
         {'form_class': forms.GeneralSettingsForm,
-         'template_name': 'admin/settings.html'},
+         'template_name': 'admin/general_settings.html'},
         name="settings-general"),
     url(r'^authentication/$', 'site_settings',
         {'form_class': forms.AuthenticationSettingsForm,
@@ -59,27 +63,33 @@ settings_urlpatterns = patterns('reviewboard.admin.views',
         {'form_class': forms.StorageSettingsForm,
          'template_name': 'admin/storage_settings.html'},
         name="settings-storage"),
+    url(r'^support/$', 'site_settings',
+        {'form_class': forms.SupportSettingsForm,
+         'template_name': 'admin/settings.html'},
+        name="settings-support"),
 )
 
-urlpatterns = patterns('reviewboard.admin.views',
+urlpatterns = patterns(
+    'reviewboard.admin.views',
+
     (r'^$', 'dashboard'),
-    (r'^cache/$', 'cache_stats'),
+    url(r'^cache/$', 'cache_stats', name='admin-server-cache'),
     (r'^settings/', include(settings_urlpatterns)),
     (r'^widget-toggle/', 'widget_toggle'),
-    (r'^widget-activity/','widget_activity'),
+    (r'^widget-activity/', 'widget_activity'),
 )
 
-urlpatterns += patterns('',
+urlpatterns += patterns(
+    '',
+
     (r'^log/', include('djblets.log.urls')),
 
     ('^db/', include(admin.site.urls)),
     ('^feed/news/$', 'djblets.feedview.views.view_feed',
      {'template_name': 'admin/feed.html',
       'url': NEWS_FEED}),
-    (r'^feed/news/rss/$', 'django.views.generic.simple.redirect_to',
-     {'url': NEWS_FEED}),
+    (r'^feed/news/rss/$', RedirectView.as_view(url=NEWS_FEED)),
 
-    url(r'^settings/$', 'django.views.generic.simple.redirect_to',
-        {'url': 'general/'},
+    url(r'^settings/$', RedirectView.as_view(url='general/'),
         name="site-settings"),
 )

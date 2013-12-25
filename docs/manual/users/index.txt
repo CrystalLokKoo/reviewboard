@@ -9,10 +9,10 @@ Users Guide
 
    getting-started/index
    dashboard/index
-   searching/index
    review-requests/index
    reviews/index
-   tools/index
+   searching/index
+   markdown
 
 
 .. comment: vim: ft=rst et ts=3

@@ -24,7 +24,9 @@ sys.path.append(os.path.abspath('_ext'))
 
 
 # Set this up to parse Django-driven code.
-sys.path.insert(0, os.path.join(__file__, "..", ".."))
+sys.path.insert(0, os.path.abspath(os.path.join(__file__, '..', '..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(__file__, '..', '..', '..',
+                                                '..', 'djblets')))
 sys.path.insert(0, os.path.dirname(__file__))
 
 import reviewboard
@@ -51,7 +53,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Release Notes'
-copyright = u'2009-2011, Christian Hammond'
+copyright = u'2009-2013 Beanbag, Inc.'
 bugtracker_url = 'http://www.reviewboard.org/bugs/%s'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -148,7 +150,7 @@ html_static_path = ['_static']
 #html_use_modindex = True
 
 # If false, no index is generated.
-#html_use_index = True
+html_use_index = False
 
 # If true, the index is split into individual pages for each letter.
 #html_split_index = False
@@ -180,7 +182,7 @@ htmlhelp_basename = 'ReleaseNotes'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, document class [howto/manual]).
 latex_documents = [
-  ('contents', 'ReleaseNotes.tex', ur'Release Notes',
+  ('index', 'ReleaseNotes.tex', ur'Release Notes',
    ur'Christian Hammond', 'manual'),
 ]
 

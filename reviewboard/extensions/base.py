@@ -1,10 +1,14 @@
-from djblets.extensions.base import ExtensionManager, Extension
+from __future__ import unicode_literals
+
+from djblets.extensions.extension import Extension
+from djblets.extensions.manager import ExtensionManager
 
 
 __all__ = ['ExtensionManager', 'Extension', 'get_extension_manager']
 
 
 _extension_manager = None
+
 
 def get_extension_manager():
     global _extension_manager

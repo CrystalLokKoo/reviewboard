@@ -1,17 +1,17 @@
+from __future__ import unicode_literals
+
 import logging
 import re
 
-try:
-    from urllib2 import quote as urllib_quote
-except ImportError:
-    from urllib import quote as urllib_quote
-
+from djblets.util.compat import six
+from djblets.util.compat.six.moves.urllib.parse import quote as urllib_quote
 from pkg_resources import parse_version
 
 from reviewboard.diffviewer.parser import DiffParser, DiffParserError
 from reviewboard.scmtools.git import GitDiffParser
 from reviewboard.scmtools.core import \
     FileNotFoundError, SCMClient, SCMTool, HEAD, PRE_CREATION, UNKNOWN
+from reviewboard.scmtools.errors import RepositoryNotFoundError
 
 
 class HgTool(SCMTool):
@@ -31,10 +31,9 @@ class HgTool(SCMTool):
             self.client = HgClient(repository.path, repository.local_site)
 
         self.uses_atomic_revisions = True
-        self.diff_uses_changeset_ids = True
 
     def get_file(self, path, revision=HEAD):
-        return self.client.cat_file(path, str(revision))
+        return self.client.cat_file(path, six.text_type(revision))
 
     def parse_diff_revision(self, file_str, revision_str, *args, **kwargs):
         revision = revision_str
@@ -55,6 +54,19 @@ class HgTool(SCMTool):
             return GitDiffParser(data)
         else:
             return HgDiffParser(data)
+
+    @classmethod
+    def check_repository(cls, path, username=None, password=None,
+                         local_site_name=None):
+        """Performs checks on a repository to test its validity."""
+        super(HgTool, cls).check_repository(path, username, password,
+                                            local_site_name)
+
+        # Create a client. This will fail if the repository doesn't exist.
+        if path.startswith('http'):
+            HgWebClient(path, username, password)
+        else:
+            HgClient(path, local_site_name)
 
 
 class HgDiffParser(DiffParser):
@@ -98,7 +110,7 @@ class HgDiffParser(DiffParser):
             except ValueError:
                 raise DiffParserError("The diff file is missing revision "
                                       "information", linenum)
-            linenum += 1;
+            linenum += 1
 
         elif self.lines[linenum].startswith("diff --git") and \
             self.origChangesetId:
@@ -114,8 +126,8 @@ class HgDiffParser(DiffParser):
             else:
                 info['newInfo'] = self.newChangesetId
             lineMatch = re.search(
-                    r' a/(.*?) b/(.*?)( (copy|rename) from .*)?$',
-                    self.lines[linenum])
+                r' a/(.*?) b/(.*?)( (copy|rename) from .*)?$',
+                self.lines[linenum])
             info['origFile'] = lineMatch.group(1)
             info['newFile'] = lineMatch.group(2)
             linenum += 1
@@ -134,22 +146,22 @@ class HgDiffParser(DiffParser):
 
         else:
             while linenum < len(self.lines):
-                if self._check_file_diff_start(linenum, info ):
+                if self._check_file_diff_start(linenum, info):
                     self.isGitDiff = False
                     linenum += 2
                     return linenum
 
                 line = self.lines[linenum]
-                if line.startswith("Binary file") or \
-                   line.startswith("GIT binary"):
+                if (line.startswith("Binary file") or
+                    line.startswith("GIT binary")):
                     info['binary'] = True
                     linenum += 1
-                elif line.startswith("copy") or \
-                   line.startswith("rename") or \
-                   line.startswith("new") or \
-                   line.startswith("old") or \
-                   line.startswith("deleted") or \
-                   line.startswith("index"):
+                elif (line.startswith("copy") or
+                      line.startswith("rename") or
+                      line.startswith("new") or
+                      line.startswith("old") or
+                      line.startswith("deleted") or
+                      line.startswith("index")):
                     # Not interested, just pass over this one
                     linenum += 1
                 else:
@@ -157,10 +169,13 @@ class HgDiffParser(DiffParser):
 
         return linenum
 
+    def get_orig_commit_id(self):
+        return self.origChangesetId
+
     def _check_file_diff_start(self, linenum, info):
-        if linenum + 1 < len(self.lines) and \
-           (self.lines[linenum].startswith('--- ') and \
-             self.lines[linenum + 1].startswith('+++ ')):
+        if (linenum + 1 < len(self.lines) and
+            (self.lines[linenum].startswith('--- ') and
+             self.lines[linenum + 1].startswith('+++ '))):
             # check if we're a new file
             if self.lines[linenum].split()[1] == "/dev/null":
                 info['origInfo'] = PRE_CREATION
@@ -207,29 +222,15 @@ class HgWebClient(SCMClient):
         raise FileNotFoundError(path, rev)
 
 
-class HgClient(object):
-    def __init__(self, repoPath, local_site):
-        from mercurial import hg, ui
-        from mercurial.__version__ import version
+class HgClient(SCMClient):
+    def __init__(self, path, local_site):
+        super(HgClient, self).__init__(path)
+        self.default_args = None
 
-        if parse_version(version) <= parse_version("1.2"):
-            hg_ui = ui.ui(interactive=False)
+        if local_site:
+            self.local_site_name = local_site.name
         else:
-            hg_ui = ui.ui()
-            hg_ui.setconfig('ui', 'interactive', 'off')
-
-        # Check whether ssh is configured for mercurial. Assume that any
-        # configured ssh is set up correctly for this repository.
-        hg_ssh = hg_ui.config('ui', 'ssh')
-
-        if not hg_ssh:
-            logging.debug('Using rbssh for mercurial')
-            hg_ui.setconfig('ui', 'ssh', 'rbssh --rb-local-site=%s'
-                            % local_site)
-        else:
-            logging.debug('Found configured ssh for mercurial: %s' % hg_ssh)
-
-        self.repo = hg.repository(hg_ui, path=repoPath)
+            self.local_site_name = None
 
     def cat_file(self, path, rev="tip"):
         if rev == HEAD:
@@ -237,9 +238,60 @@ class HgClient(object):
         elif rev == PRE_CREATION:
             rev = ""
 
-        try:
-            return self.repo.changectx(rev).filectx(path).data()
-        except Exception, e:
-            # LookupError moves from repo to revlog in hg v0.9.4, so we
-            # catch the more general Exception to avoid the dependency.
-            raise FileNotFoundError(path, rev, str(e))
+        if path:
+            p = self._run_hg(['cat', '--rev', rev, path])
+            contents = p.stdout.read()
+            failure = p.wait()
+
+            if not failure:
+                return contents
+
+        raise FileNotFoundError(path, rev)
+
+    def _calculate_default_args(self):
+        self.default_args = [
+            '--noninteractive',
+            '--repository', self.path,
+            '--cwd', self.path,
+        ]
+
+        # We need to query hg for the current SSH configuration. Note
+        # that _run_hg is calling this function, and this function is then
+        # (through _get_hg_config) calling _run_hg, but it's okay. Due to
+        # having set a good default for self.default_args above, there's no
+        # issue of an infinite loop.
+        hg_ssh = self._get_hg_config('ui.ssh')
+
+        if not hg_ssh:
+            logging.debug('Using rbssh for mercurial')
+
+            if self.local_site_name:
+                hg_ssh = 'rbssh --rb-local-site=%s' % self.local_site_name
+            else:
+                hg_ssh = 'rbssh'
+
+            self.default_args.extend([
+                '--config', 'ui.ssh=%s' % hg_ssh,
+            ])
+        else:
+            logging.debug('Found configured ssh for mercurial: %s' % hg_ssh)
+
+    def _get_hg_config(self, config_name):
+        p = self._run_hg(['showconfig', config_name])
+        contents = p.stdout.read()
+        failure = p.wait()
+
+        if failure:
+            # Just assume it's empty.
+            return None
+
+        return contents.strip()
+
+    def _run_hg(self, args):
+        """Runs the Mercurial command, returning a subprocess.Popen."""
+        if not self.default_args:
+            self._calculate_default_args()
+
+        return SCMTool.popen(
+            ['hg'] + self.default_args + args,
+            local_site_name=self.local_site_name)

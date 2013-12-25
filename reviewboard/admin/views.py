@@ -1,22 +1,24 @@
+from __future__ import unicode_literals
+
+import json
 import logging
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
-from django.core.cache import cache
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render_to_response
 from django.template.context import RequestContext
 from django.template.loader import render_to_string
-from django.utils import simplejson
 from django.utils.translation import ugettext as _
 from djblets.siteconfig.models import SiteConfiguration
 from djblets.siteconfig.views import site_settings as djblets_site_settings
 
 from reviewboard.admin.cache_stats import get_cache_stats
 from reviewboard.admin.forms import SSHSettingsForm
-from reviewboard.admin.widgets import dynamic_activity_data, \
-                                      primary_widgets, \
-                                      secondary_widgets
+from reviewboard.admin.support import get_support_url
+from reviewboard.admin.widgets import (dynamic_activity_data,
+                                       primary_widgets,
+                                       secondary_widgets)
 from reviewboard.ssh.client import SSHClient
 from reviewboard.ssh.utils import humanize_key
 
@@ -45,7 +47,7 @@ def cache_stats(request, template_name="admin/cache_stats.html"):
 
     return render_to_response(template_name, RequestContext(request, {
         'cache_hosts': cache_stats,
-        'cache_backend': cache.__module__,
+        'cache_backend': settings.CACHES['default']['BACKEND'],
         'title': _("Server Cache"),
         'root_path': settings.SITE_ROOT + "admin/db/"
     }))
@@ -68,12 +70,19 @@ def ssh_settings(request, template_name='admin/ssh_settings.html'):
         form = SSHSettingsForm(request.POST, request.FILES)
 
         if form.is_valid():
-            try:
-                form.create(request.FILES)
-                return HttpResponseRedirect('.')
-            except Exception, e:
-                # Fall through. It will be reported inline and in the log.
-                logging.error('Uploading SSH key failed: %s' % e)
+            if form.did_request_delete() and client.get_user_key() is not None:
+                try:
+                    form.delete()
+                    return HttpResponseRedirect('.')
+                except Exception as e:
+                    logging.error('Deleting SSH key failed: %s' % e)
+            else:
+                try:
+                    form.create(request.FILES)
+                    return HttpResponseRedirect('.')
+                except Exception as e:
+                    # Fall through. It will be reported inline and in the log.
+                    logging.error('Uploading SSH key failed: %s' % e)
     else:
         form = SSHSettingsForm()
 
@@ -83,7 +92,6 @@ def ssh_settings(request, template_name='admin/ssh_settings.html'):
         fingerprint = None
 
     return render_to_response(template_name, RequestContext(request, {
-        'title': _('SSH Settings'),
         'key': key,
         'fingerprint': fingerprint,
         'public_key': client.get_public_key(key),
@@ -91,8 +99,9 @@ def ssh_settings(request, template_name='admin/ssh_settings.html'):
     }))
 
 
-def manual_updates_required(request, updates,
-                            template_name="admin/manual_updates_required.html"):
+def manual_updates_required(
+        request, updates,
+        template_name="admin/manual_updates_required.html"):
     """
     Checks for required manual updates and displays informational pages on
     performing the necessary updates.
@@ -130,5 +139,10 @@ def widget_activity(request):
     """
     activity_data = dynamic_activity_data(request)
 
-    return HttpResponse(simplejson.dumps(activity_data),
+    return HttpResponse(json.dumps(activity_data),
                         mimetype="application/json")
+
+
+def support_redirect(request):
+    """Redirects to the Beanbag support page for Review Board."""
+    return HttpResponseRedirect(get_support_url(request))

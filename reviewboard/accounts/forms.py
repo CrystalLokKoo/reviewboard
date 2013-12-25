@@ -1,18 +1,21 @@
+from __future__ import unicode_literals
+
 import re
 import sre_constants
 
 from django import forms
+from django.core.exceptions import ValidationError
 from django.forms import widgets
 from django.utils.safestring import mark_safe
-from django.utils.translation import ugettext as _
+from django.utils.translation import ugettext_lazy as _
 from djblets.auth.forms import RegistrationForm as DjbletsRegistrationForm
+from djblets.forms.fields import TimeZoneField
 from djblets.siteconfig.forms import SiteSettingsForm
 from djblets.siteconfig.models import SiteConfiguration
-from djblets.util.forms import TimeZoneField
 from recaptcha.client import captcha
 
-from reviewboard.admin.checks import get_can_enable_dns, \
-                                     get_can_enable_ldap
+from reviewboard.accounts.models import Profile
+from reviewboard.admin.checks import get_can_enable_dns, get_can_enable_ldap
 from reviewboard.reviews.models import Group
 
 
@@ -20,11 +23,14 @@ class PreferencesForm(forms.Form):
     redirect_to = forms.CharField(required=False, widget=forms.HiddenInput)
     groups = forms.MultipleChoiceField(widget=forms.CheckboxSelectMultiple,
                                        required=False)
-    syntax_highlighting = forms.BooleanField(required=False,
+    syntax_highlighting = forms.BooleanField(
+        required=False,
         label=_("Enable syntax highlighting in the diff viewer"))
-    profile_private = forms.BooleanField(required=False,
+    profile_private = forms.BooleanField(
+        required=False,
         label=_("Keep your user profile private"))
-    open_an_issue = forms.BooleanField(required=False,
+    open_an_issue = forms.BooleanField(
+        required=False,
         label=_("Always open an issue when comment box opens"))
     first_name = forms.CharField(required=False)
     last_name = forms.CharField(required=False)
@@ -49,7 +55,7 @@ class PreferencesForm(forms.Form):
 
         for site in user.local_site.all().order_by('name'):
             for g in Group.objects.accessible(
-                user=user, local_site=site).order_by('display_name'):
+                    user=user, local_site=site).order_by('display_name'):
                 display_name = '%s / %s' % (g.local_site.name, g.display_name)
                 choices.append((g.id, display_name))
 
@@ -79,7 +85,7 @@ class PreferencesForm(forms.Form):
         user.review_groups = self.cleaned_data['groups']
         user.save()
 
-        profile = user.get_profile()
+        profile, is_new = Profile.objects.get_or_create(user=user)
         profile.first_time_setup_done = True
         profile.syntax_highlighting = self.cleaned_data['syntax_highlighting']
         profile.is_private = self.cleaned_data['profile_private']
@@ -91,7 +97,7 @@ class PreferencesForm(forms.Form):
         p1 = self.cleaned_data['password1']
         p2 = self.cleaned_data['password2']
         if p1 != p2:
-            raise forms.ValidationError('passwords do not match')
+            raise ValidationError(_('Passwords do not match'))
         return p2
 
 
@@ -115,15 +121,16 @@ class RegistrationForm(DjbletsRegistrationForm):
         siteconfig = SiteConfiguration.objects.get_current()
 
         if siteconfig.get('site_domain_method') == 'https':
-            self.recaptcha_url = 'https://api-secure.recaptcha.net'
+            self.recaptcha_url = 'https://www.google.com/recaptcha/api'
         else:
-            self.recaptcha_url = 'http://api.recaptcha.net'
+            self.recaptcha_url = 'http://www.google.com/recaptcha/api'
 
     def clean(self):
         siteconfig = SiteConfiguration.objects.get_current()
 
         if siteconfig.get('auth_registration_show_captcha'):
-            challenge = self.cleaned_data.get('recaptcha_challenge_field', None)
+            challenge = self.cleaned_data.get('recaptcha_challenge_field',
+                                              None)
             response = self.cleaned_data.get('recaptcha_response_field', None)
 
             if challenge and response:
@@ -142,13 +149,13 @@ class RegistrationForm(DjbletsRegistrationForm):
                     # as the reCAPTCHA widget itself displays the error
                     # message. However, this may be useful for testing or
                     # debugging.
-                    raise forms.ValidationError(
+                    raise ValidationError(
                         _("The text you entered didn't match what was "
                           "displayed"))
             else:
                 self.captcha_error_query_str = '&error=incorrect-captcha-sol'
 
-                raise forms.ValidationError(
+                raise ValidationError(
                     _('You need to respond to the captcha'))
 
         return super(RegistrationForm, self).clean()
@@ -167,9 +174,11 @@ class RegistrationForm(DjbletsRegistrationForm):
 class ActiveDirectorySettingsForm(SiteSettingsForm):
     auth_ad_domain_name = forms.CharField(
         label=_("Domain name"),
-        help_text=_("Enter the domain name to use, (ie. example.com). This will be "
-                    "used to query for LDAP servers and to bind to the domain."),
-        required=True)
+        help_text=_("Enter the domain name to use, (ie. example.com). This "
+                    "will be used to query for LDAP servers and to bind to "
+                    "the domain."),
+        required=True,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ad_use_tls = forms.BooleanField(
         label=_("Use TLS for authentication"),
@@ -182,32 +191,38 @@ class ActiveDirectorySettingsForm(SiteSettingsForm):
 
     auth_ad_domain_controller = forms.CharField(
         label=_("Domain controller"),
-        help_text=_("If not using DNS to find the DC specify the domain "
-                    "controller here"),
-        required=False)
+        help_text=_("If not using DNS to find the DC, specify the domain "
+                    "controller(s) here "
+                    "(eg. ctrl1.example.com ctrl2.example.com:389)"),
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ad_ou_name = forms.CharField(
         label=_("OU name"),
         help_text=_("Optionally restrict users to specified OU."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ad_group_name = forms.CharField(
         label=_("Group name"),
         help_text=_("Optionally restrict users to specified group."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ad_search_root = forms.CharField(
         label=_("Custom search root"),
         help_text=_("Optionally specify a custom search root, overriding "
                     "the built-in computed search root. If set, \"OU name\" "
                     "is ignored."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ad_recursion_depth = forms.IntegerField(
         label=_("Recursion Depth"),
         help_text=_('Depth to recurse when checking group membership. '
                     '0 to turn off, -1 for unlimited.'),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     def load(self):
         can_enable_dns, reason = get_can_enable_dns()
@@ -245,30 +260,31 @@ class StandardAuthSettingsForm(SiteSettingsForm):
         help_text=mark_safe(
             _('Displays a captcha using <a href="%(recaptcha_url)s">'
               'reCAPTCHA</a> on the registration page. To enable this, you '
-              'will need to go <a href="%(register_url)s">here</A> to register '
-              'an account and type in your new keys below.') % {
-                  'recaptcha_url': 'http://www.recaptcha.net/',
-                  'register_url': 'https://admin.recaptcha.net/recaptcha'
-                                  '/createsite/',
+              'will need to go <a href="%(register_url)s">here</A> to '
+              'register an account and type in your new keys below.')
+            % {
+                'recaptcha_url': 'http://www.recaptcha.net/',
+                'register_url': 'https://admin.recaptcha.net/recaptcha'
+                                '/createsite/',
             }),
         required=False)
 
     recaptcha_public_key = forms.CharField(
         label=_('reCAPTCHA Public Key'),
         required=False,
-        widget=forms.TextInput(attrs={'size': '40'}))
+        widget=forms.TextInput(attrs={'size': '60'}))
 
     recaptcha_private_key = forms.CharField(
         label=_('reCAPTCHA Private Key'),
         required=False,
-        widget=forms.TextInput(attrs={'size': '40'}))
+        widget=forms.TextInput(attrs={'size': '60'}))
 
     def clean_recaptcha_public_key(self):
         """Validates that the reCAPTCHA public key is specified if needed."""
         key = self.cleaned_data['recaptcha_public_key'].strip()
 
         if self.cleaned_data['auth_registration_show_captcha'] and not key:
-            raise forms.ValidationError(_('This field is required.'))
+            raise ValidationError(_('This field is required.'))
 
         return key
 
@@ -277,7 +293,7 @@ class StandardAuthSettingsForm(SiteSettingsForm):
         key = self.cleaned_data['recaptcha_private_key'].strip()
 
         if self.cleaned_data['auth_registration_show_captcha'] and not key:
-            raise forms.ValidationError(_('This field is required.'))
+            raise ValidationError(_('This field is required.'))
 
         return key
 
@@ -290,13 +306,15 @@ class LDAPSettingsForm(SiteSettingsForm):
     auth_ldap_uri = forms.CharField(
         label=_("LDAP Server"),
         help_text=_("The LDAP server to authenticate with. "
-                    "For example: ldap://localhost:389"))
+                    "For example: ldap://localhost:389"),
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ldap_base_dn = forms.CharField(
         label=_("LDAP Base DN"),
         help_text=_("The LDAP Base DN for performing LDAP searches.  For "
                     "example: ou=users,dc=example,dc=com"),
-        required=True)
+        required=True,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ldap_given_name_attribute = forms.CharField(
         label=_("Given Name Attribute"),
@@ -324,7 +342,8 @@ class LDAPSettingsForm(SiteSettingsForm):
         help_text=_("The domain name appended to the username to construct "
                     "the user's e-mail address. This takes precedence over "
                     '"E-Mail LDAP Attribute."'),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ldap_email_attribute = forms.CharField(
         label=_("E-Mail LDAP Attribute"),
@@ -342,18 +361,19 @@ class LDAPSettingsForm(SiteSettingsForm):
         help_text=_("The string representing the user. Use \"%(varname)s\" "
                     "where the username would normally go. For example: "
                     "(uid=%(varname)s) or (sAMAccountName=%(varname)s) "
-                    "[for active directory LDAP]") %
-                  {'varname': '%s'})
+                    "[for active directory LDAP]") % {'varname': '%s'},
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ldap_anon_bind_uid = forms.CharField(
         label=_("Anonymous User Mask"),
         help_text=_("The user mask string for anonymous users. If specified, "
                     "this should be in the same format as User Mask."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_ldap_anon_bind_passwd = forms.CharField(
         label=_("Anonymous User Password"),
-        widget=forms.PasswordInput,
+        widget=forms.PasswordInput(attrs={'size': '30'}),
         help_text=_("The optional password for the anonymous user."),
         required=False)
 
@@ -385,7 +405,8 @@ class LegacyAuthModuleSettingsForm(SiteSettingsForm):
     custom_backends = forms.CharField(
         label=_("Backends"),
         help_text=_('A comma-separated list of old-style custom auth '
-                    'backends. These are represented as Python module paths.'))
+                    'backends. These are represented as Python module paths.'),
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     def load(self):
         self.fields['custom_backends'].initial = \
@@ -394,7 +415,8 @@ class LegacyAuthModuleSettingsForm(SiteSettingsForm):
         super(LegacyAuthModuleSettingsForm, self).load()
 
     def save(self):
-        self.siteconfig.set('auth_custom_backends',
+        self.siteconfig.set(
+            'auth_custom_backends',
             re.split(r',\s*', self.cleaned_data['custom_backends']))
 
         super(LegacyAuthModuleSettingsForm, self).save()
@@ -405,7 +427,9 @@ class LegacyAuthModuleSettingsForm(SiteSettingsForm):
 
 
 class NISSettingsForm(SiteSettingsForm):
-    auth_nis_email_domain = forms.CharField(label=_("E-Mail Domain"))
+    auth_nis_email_domain = forms.CharField(
+        label=_("E-Mail Domain"),
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     class Meta:
         title = _('NIS Authentication Settings')
@@ -417,9 +441,9 @@ class X509SettingsForm(SiteSettingsForm):
         choices=(
             # Note: These names correspond to environment variables set by
             #       mod_ssl.
-            ("SSL_CLIENT_S_DN",        _("DN (Distinguished Name)")),
-            ("SSL_CLIENT_S_DN_CN",     _("CN (Common Name)")),
-            ("SSL_CLIENT_S_DN_Email",  _("Email address")),
+            ("SSL_CLIENT_S_DN", _("DN (Distinguished Name)")),
+            ("SSL_CLIENT_S_DN_CN", _("CN (Common Name)")),
+            ("SSL_CLIENT_S_DN_Email", _("Email address")),
         ),
         help_text=_("The X.509 certificate field from which the Review Board "
                     "username will be extracted."),
@@ -433,7 +457,8 @@ class X509SettingsForm(SiteSettingsForm):
                     "username, use this regex to get the username from an "
                     "e-mail address: '(\s+)@yoursite.com'. There must be only "
                     "one group in the regex."),
-        required=False)
+        required=False,
+        widget=forms.TextInput(attrs={'size': '40'}))
 
     auth_x509_autocreate_users = forms.BooleanField(
         label=_("Automatically create new user accounts."),
@@ -448,8 +473,8 @@ class X509SettingsForm(SiteSettingsForm):
 
         try:
             re.compile(regex)
-        except sre_constants.error, e:
-            raise forms.ValidationError(e)
+        except sre_constants.error as e:
+            raise ValidationError(e)
 
         return regex
 

@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.core.management.base import NoArgsCommand
 
 from reviewboard.accounts.models import LocalSiteProfile
@@ -5,7 +7,7 @@ from reviewboard.reviews.models import Group
 
 
 class Command(NoArgsCommand):
-    help="Fixes all incorrect review request-related counters."
+    help = "Fixes all incorrect review request-related counters."
 
     def handle_noargs(self, **options):
         LocalSiteProfile.objects.update(

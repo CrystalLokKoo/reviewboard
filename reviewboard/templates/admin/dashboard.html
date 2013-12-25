@@ -1,10 +1,5 @@
 {% extends "admin/base_site.html" %}
-{% load adminmedia %}
-{% load compressed %}
-{% load i18n %}
-{% load log %}
-{% load rbadmintags %}
-{% load staticfiles %}
+{% load compressed i18n log rbadmintags staticfiles %}
 
 {% block coltype %}colM{% endblock %}
 {% block bodyclass %}dashboard{% endblock %}
@@ -13,12 +8,6 @@
 {% block scripts-post %}
 <!--[if IE]><script src="{% static "lib/js/flot/excanvas.min.js" %}"></script><![endif]-->
 {% compressed_js "admin" %}
-{% endblock %}
-
-{% block pretitle %}
- <div id="admin-actions" class="clear">
-  {% admin_actions %}
- </div>
 {% endblock %}
 
 {% block content_title %}{% endblock %}

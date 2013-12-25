@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.contrib import admin
 from django.utils.translation import ugettext_lazy as _
 
@@ -6,7 +8,8 @@ from reviewboard.scmtools.models import Repository, Tool
 
 
 class RepositoryAdmin(admin.ModelAdmin):
-    list_display = ('__unicode__', 'path', 'hosting', 'visible')
+    list_display = ('__str__', 'path', 'hosting', 'visible')
+    raw_id_fields = ('local_site',)
     fieldsets = (
         (_('General Information'), {
             'fields': ('name', 'visible',),
@@ -15,9 +18,11 @@ class RepositoryAdmin(admin.ModelAdmin):
         (_('Repository Hosting'), {
             'fields': (
                 'hosting_type',
+                'hosting_url',
                 'hosting_account',
                 'hosting_account_username',
                 'hosting_account_password',
+                'hosting_account_two_factor_auth_code',
             ),
             'classes': ('wide',),
         }),
@@ -30,6 +35,13 @@ class RepositoryAdmin(admin.ModelAdmin):
                 'raw_file_url',
                 'username',
                 'password',
+                'use_ticket_auth',
+            ),
+            'classes': ('wide',),
+        }),
+        (RepositoryForm.SSH_KEY_FIELDSET, {
+            'fields': (
+                'associate_ssh_key',
             ),
             'classes': ('wide',),
         }),
@@ -37,6 +49,7 @@ class RepositoryAdmin(admin.ModelAdmin):
             'fields': (
                 'bug_tracker_use_hosting',
                 'bug_tracker_type',
+                'bug_tracker_hosting_url',
                 'bug_tracker_plan',
                 'bug_tracker_hosting_account_username',
                 'bug_tracker',
@@ -63,13 +76,15 @@ class RepositoryAdmin(admin.ModelAdmin):
     def hosting(self, repository):
         if repository.hosting_account_id:
             account = repository.hosting_account
-            return '%s@%s' % (account.username, account.service.name)
-        else:
-            return ''
+
+            if account.service:
+                return '%s@%s' % (account.username, account.service.name)
+
+        return ''
 
 
 class ToolAdmin(admin.ModelAdmin):
-    list_display = ('__unicode__', 'class_name')
+    list_display = ('__str__', 'class_name')
 
 
 admin.site.register(Repository, RepositoryAdmin)

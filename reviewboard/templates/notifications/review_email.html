@@ -1,6 +1,5 @@
 {% extends "notifications/email_base.html" %}
-{% load djblets_email %}
-{% load djblets_utils %}
+{% load djblets_email djblets_utils markdown_email rb_extensions %}
 
 {% block content %}
 {%  if review.ship_it %}
@@ -8,7 +7,7 @@
 {%  endif %}
 
 {% if review.body_top %}
- <pre style="{{precss}}">{{review.body_top}}</pre>
+ <pre style="{{precss}}">{{review.body_top|markdown_email_html:review.rich_text}}</pre>
  <br />
 {% endif %}
 
@@ -21,22 +20,51 @@
   <td><a href="{{domain_method}}://{{domain}}{{comment.screenshot.get_absolute_url}}"><img src="{{domain_method}}://{{domain}}{{comment.get_image_url}}" style="border: 1px black solid;" alt="{{comment.screenshot.caption}}"></a></td>
  </tr>
 </table>
-<pre style="margin-left: 2em; {{precss}}">{{comment.text}}</pre>
+<div style="margin-left: 2em;">
+{%  comment_detail_display_hook comment "html-email" %}
+ <pre style="{{precss}}">{{comment.text|markdown_email_html:comment.rich_text}}</pre>
+</div>
+<br />
+{% endfor %}
+
+{% for comment in review.file_attachment_comments.all %}
+<table bgcolor="#f0f0f0" cellpadding="5" cellspacing="5" style="border: 1px solid #c0c0c0; margin-bottom: 10px">
+ <tr>
+  <td>
+   <a href="{{domain_method}}://{{domain}}{{comment.get_absolute_url}}" style="color: black; font-weight: bold; font-size: 9pt;">{{comment.get_link_text}}</a>
+{% if comment.file_attachment.caption %}
+   <p>{{comment.file_attachment.caption}}</p>
+{% endif %}
+{% with comment.thumbnail as thumbnail %}
+{%  if thumbnail %}
+    <div>{{thumbnail|default:''|safe}}</div>
+{%  endif %}
+{% endwith %}
+  </td>
+ </tr>
+</table>
+<div style="margin-left: 2em;">
+{%  comment_detail_display_hook comment "html-email" %}
+ <pre style="{{precss}}">{{comment.text|markdown_email_html:comment.rich_text}}</pre>
+</div>
 <br />
 {% endfor %}
 
 {% for entry in comment_entries %}
 <div>
 {{entry.html|safe}}
-<pre style="margin-left: 2em; {{precss}}">{{entry.comment.text}}</pre>
+ <div style="margin-left: 2em;">
+{%  comment_detail_display_hook entry.comment "html-email" %}
+  <pre style="{{precss}}">{{entry.comment.text|markdown_email_html:entry.comment.rich_text}}</pre>
+ </div>
 </div>
 <br />
 {% endfor %}
 
 {% if review.body_bottom %}
- <pre style="{{precss}}">{{review.body_bottom}}</pre>
+ <pre style="{{precss}}">{{review.body_bottom|markdown_email_html:review.rich_text}}</pre>
 {% endif %}
-<p>- {% if review.user.first_name != "" %}{{review.user.first_name}}{% else %}{{review.user.username}}{% endif %}</p>
+<p>- {{review.user|user_displayname}}</p>
 {% endblock %}
 
 {% block footer %}

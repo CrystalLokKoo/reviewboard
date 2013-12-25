@@ -1,53 +1,19 @@
+from __future__ import unicode_literals
+
 import re
 
 from django import template
-from django.conf import settings
-from django.template.context import Context
-from django.template.loader import get_template, render_to_string
+from django.template.loader import render_to_string
 from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext as _
+from djblets.util.compat.six.moves import range
 from djblets.util.decorators import basictag
 
-from reviewboard.diffviewer.diffutils import STYLED_MAX_LINE_LEN
+from reviewboard.diffviewer.chunk_generator import DiffChunkGenerator
 
 
 register = template.Library()
-
-
-@register.filter
-def revision_link_list(history, current_pair):
-    """
-    Returns a list of revisions in the specified diffset history, indicating
-    which of the revisions is already selected, as determined by the current
-    diffset pair.
-    """
-    for diffset in history.diffsets.all():
-        yield {
-            'revision': diffset.revision,
-            'is_current': current_pair[0] == diffset and
-                          current_pair[1] == None
-        }
-
-
-@register.filter
-def interdiff_link_list(history, current_pair):
-    """
-    Returns a list of revisions in the specified diffset history based on
-    the passed interdiff pair.
-    """
-    for diffset in history.diffsets.all():
-        if current_pair[0].revision < diffset.revision:
-            path = "%s-%s" % (current_pair[0].revision, diffset.revision)
-        else:
-            path = "%s-%s" % (diffset.revision, current_pair[0].revision)
-
-        yield {
-            'revision': diffset.revision,
-            'path': path,
-            'is_current': current_pair[0] == diffset or
-                          current_pair[1] == diffset
-        }
 
 
 @register.filter
@@ -81,7 +47,7 @@ def highlightregion(value, regions):
     i = j = r = 0
     region = regions[r]
 
-    for i in xrange(len(value)):
+    for i in range(len(value)):
         if value[i] == "<":
             in_tag = True
 
@@ -126,6 +92,7 @@ highlightregion.is_safe = True
 
 extraWhitespace = re.compile(r'(\s+(</span>)?$| +\t)')
 
+
 @register.filter
 def showextrawhitespace(value):
     """
@@ -141,8 +108,7 @@ showextrawhitespace.is_safe = True
 
 
 def _diff_expand_link(context, expandable, text, tooltip,
-                      expand_pos, image, image_alt='[+]',
-                      image_width=14, image_height=14):
+                      expand_pos, image_class):
     """Utility function to render a diff expansion link.
 
     This is used internally by other template tags to provide a diff
@@ -152,16 +118,13 @@ def _diff_expand_link(context, expandable, text, tooltip,
     return render_to_string('diffviewer/expand_link.html', {
         'tooltip': tooltip,
         'text': text,
-        'base_url': context['base_url'],
         'chunk': context['chunk'],
         'file': context['file'],
         'expand_pos': expand_pos,
-        'image': image,
-        'image_width': image_width,
-        'image_height': image_height,
-        'image_alt': image_alt,
+        'image_class': image_class,
         'expandable': expandable,
     })
+
 
 @register.tag
 @basictag(takes_context=True)
@@ -175,21 +138,17 @@ def diff_expand_link(context, expanding, tooltip,
     'expanding' is expected to be one of 'all', 'above', or 'below'.
     """
     if expanding == 'all':
-        image = 'rb/images/diff-expand-all.png'
+        image_class = 'rb-icon-diff-expand-all'
         expand_pos = None
-        image_alt = '[20]'
-        image_width = 14
     else:
         lines_of_context = context['lines_of_context']
         expand_pos = (lines_of_context[0] + expand_pos_1,
                       lines_of_context[1] + expand_pos_2)
-        image = 'rb/images/diff-expand-%s.png' % expanding
-        image_width = 28
-        image_alt = '[+20]'
-
+        image_class = 'rb-icon-diff-expand-%s' % expanding
 
     return _diff_expand_link(context, True, text, tooltip, expand_pos,
-                             image, image_alt, image_width)
+                             image_class)
+
 
 @register.tag
 @basictag(takes_context=True)
@@ -213,11 +172,11 @@ def diff_chunk_header(context, header):
         expandable = False
 
     return _diff_expand_link(context, expandable,
-                             '<code>%s</code>' % header['text'],
+                             '<code>%s</code>' % escape(header['text']),
                              _('Expand to header'),
                              (lines_of_context[0],
                               expand_offset + lines_of_context[1]),
-                             'rb/images/diff-expand-header.png')
+                             'rb-icon-diff-expand-header')
 
 
 @register.simple_tag
@@ -242,10 +201,18 @@ def diff_lines(file, chunk, standalone, line_fmt, anchor_fmt,
     is_insert = (change == 'insert')
     is_delete = (change == 'delete')
 
+    moved_from_prev_linenum = None
+    moved_to_prev_linenum = None
+
     result = []
 
     for i, line in enumerate(lines):
-        class_attr = ''
+        row_classes = []
+        cell_1_classes = []
+        cell_2_classes = []
+        row_class_attr = ''
+        cell_1_class_attr = ''
+        cell_2_class_attr = ''
         line1 = line[2]
         line2 = line[5]
         linenum1 = line[1]
@@ -254,55 +221,91 @@ def diff_lines(file, chunk, standalone, line_fmt, anchor_fmt,
         anchor = None
 
         if not is_equal:
-            classes = ''
-
             if i == 0:
-                classes += 'first '
+                row_classes.append('first')
                 anchor = '%s.%s' % (file['index'], chunk_index)
 
             if i == num_lines - 1:
-                classes += 'last '
+                row_classes.append('last')
 
             if line[7]:
-                classes += 'whitespace-line'
-
-            if classes:
-                class_attr = ' class="%s"' % classes
+                row_classes.append('whitespace-line')
 
             if is_replace:
-                if len(line1) < STYLED_MAX_LINE_LEN:
+                if len(line1) < DiffChunkGenerator.STYLED_MAX_LINE_LEN:
                     line1 = highlightregion(line1, line[3])
 
-                if len(line2) < STYLED_MAX_LINE_LEN:
+                if len(line2) < DiffChunkGenerator.STYLED_MAX_LINE_LEN:
                     line2 = highlightregion(line2, line[6])
         else:
             show_collapse = (i == 0 and standalone)
 
-        if not is_delete and len(line1) < STYLED_MAX_LINE_LEN:
+        if (not is_insert and
+                len(line1) < DiffChunkGenerator.STYLED_MAX_LINE_LEN):
             line1 = showextrawhitespace(line1)
 
-        if not is_insert and len(line2) < STYLED_MAX_LINE_LEN:
+        if (not is_delete and
+                len(line2) < DiffChunkGenerator.STYLED_MAX_LINE_LEN):
             line2 = showextrawhitespace(line2)
 
         moved_from = {}
         moved_to = {}
 
-        if len(line) > 8 and line[8]:
-            if is_insert:
-                moved_from = {
-                    'class': 'moved-from',
-                    'line': mark_safe(line[8]),
-                    'target': mark_safe(linenum2),
-                    'text': _('Moved from %s') % line[8],
-                }
+        if len(line) > 8 and isinstance(line[8], dict):
+            moved_info = line[8]
+            moved_to_linenum = moved_info.get('to')
+            moved_from_linenum = moved_info.get('from')
 
-            if is_delete:
-                moved_to = {
-                    'class': 'moved-to',
-                    'line': mark_safe(line[8]),
-                    'target': mark_safe(linenum1),
-                    'text': _('Moved to %s') % line[8],
-                }
+            if moved_from_linenum is not None:
+                cell_2_classes.append('moved-from')
+
+                if (moved_from_prev_linenum is None or
+                    moved_from_linenum != moved_from_prev_linenum + 1):
+                    # This is the start of a new move range.
+                    cell_2_classes.append('moved-from-start')
+                    moved_from = {
+                        'class': 'moved-flag',
+                        'line': mark_safe(moved_from_linenum),
+                        'target': mark_safe(linenum2),
+                        'text': _('Moved from line %s') % moved_from_linenum,
+                    }
+
+                moved_from_prev_linenum = moved_from_linenum
+            else:
+                moved_from_prev_linenum = None
+
+            if moved_to_linenum is not None:
+                cell_1_classes.append('moved-to')
+
+                if (moved_to_prev_linenum is None or
+                    moved_to_linenum != moved_to_prev_linenum + 1):
+                    # This is the start of a new move range.
+                    cell_1_classes.append('moved-to-start')
+                    moved_to = {
+                        'class': 'moved-flag',
+                        'line': mark_safe(moved_to_linenum),
+                        'target': mark_safe(linenum1),
+                        'text': _('Moved to line %s') % moved_to_linenum,
+                    }
+
+                moved_to_prev_linenum = moved_to_linenum
+            else:
+                moved_to_prev_linenum = None
+        else:
+            moved_from_prev_linenum = None
+            moved_to_prev_linenum = None
+
+        if moved_to or moved_from:
+            row_classes.append('moved-row')
+
+        if row_classes:
+            row_class_attr = ' class="%s"' % ' '.join(row_classes)
+
+        if cell_1_classes:
+            cell_1_class_attr = ' class="%s"' % ' '.join(cell_1_classes)
+
+        if cell_2_classes:
+            cell_2_class_attr = ' class="%s"' % ' '.join(cell_2_classes)
 
         anchor_html = ''
         begin_collapse_html = ''
@@ -312,7 +315,9 @@ def diff_lines(file, chunk, standalone, line_fmt, anchor_fmt,
 
         context = {
             'chunk_index': chunk_index,
-            'class_attr': class_attr,
+            'row_class_attr': row_class_attr,
+            'cell_1_class_attr': cell_1_class_attr,
+            'cell_2_class_attr': cell_2_class_attr,
             'linenum_row': line[0],
             'linenum1': linenum1,
             'linenum2': linenum2,

@@ -1,24 +1,34 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+import datetime
 import logging
 import os
 import re
-import urllib
-import urlparse
+import weakref
+from shutil import rmtree
+from tempfile import mkdtemp
 
 try:
-    from pysvn import ClientError, Revision, opt_revision_kind
+    from pysvn import (ClientError, Revision, opt_revision_kind,
+                       SVN_DIRENT_CREATED_REV)
 except ImportError:
     pass
-
+from django.core.cache import cache
 from django.utils.translation import ugettext as _
+from djblets.util.compat import six
+from djblets.util.compat.six.moves.urllib.parse import (urlsplit, urlunsplit,
+                                                        quote)
 
 from reviewboard.diffviewer.parser import DiffParser
 from reviewboard.scmtools.certs import Certificate
-from reviewboard.scmtools.core import SCMTool, HEAD, PRE_CREATION, UNKNOWN
-from reviewboard.scmtools.errors import AuthenticationError, \
-                                        FileNotFoundError, \
-                                        RepositoryNotFoundError, \
-                                        SCMError, \
-                                        UnverifiedCertificateError
+from reviewboard.scmtools.core import (Branch, Commit, SCMTool,
+                                       HEAD, PRE_CREATION, UNKNOWN)
+from reviewboard.scmtools.errors import (AuthenticationError,
+                                         FileNotFoundError,
+                                         RepositoryNotFoundError,
+                                         SCMError,
+                                         UnverifiedCertificateError)
 from reviewboard.ssh import utils as sshutils
 
 
@@ -43,6 +53,7 @@ class SVNTool(SCMTool):
     name = "Subversion"
     uses_atomic_revisions = True
     supports_authentication = True
+    supports_post_commit = True
     dependencies = {
         'modules': ['pysvn'],
     }
@@ -88,10 +99,22 @@ class SVNTool(SCMTool):
             self.build_client(repository.username, repository.password,
                               local_site_name)
 
+        # If we assign a function to the pysvn Client that accesses anything
+        # bound to SVNClient, it'll end up keeping a reference and a copy of
+        # the function for every instance that gets created, and will never
+        # let go. This will cause a rather large memory leak.
+        #
+        # The solution is to access a weakref instead. The weakref will
+        # reference the repository, but it will safely go away when needed.
+        # The function we pass can access that without causing the leaks
+        repository_ref = weakref.ref(repository)
         self.client.callback_ssl_server_trust_prompt = \
-            self._ssl_server_trust_prompt
+            lambda trust_dict: \
+            SVNTool._ssl_server_trust_prompt(trust_dict, repository_ref())
 
-        # svnlook uses 'rev 0', while svn diff uses 'revision 0'
+        # 'svn diff' produces patches which have the revision string localized
+        # to their system locale. This is a little ridiculous, but we have to
+        # deal with it because not everyone uses post-review.
         self.revision_re = re.compile("""
             ^(\(([^\)]+)\)\s)?              # creating diffs between two branches
                                             # of a remote repository will insert
@@ -104,8 +127,20 @@ class SVNTool(SCMTool):
                                             # probably a really crappy way to
                                             # express that, but oh well.
 
-            \ *\([Rr]ev(?:ision)?\ (\d+)\)$ # svnlook uses 'rev 0' while svn diff
-                                            # uses 'revision 0'
+            \ *\((?:
+                [Rr]ev(?:ision)?|           # english - svnlook uses 'rev 0'
+                                            #           while svn diff uses
+                                            #           'revision 0'
+                revisión:|                  # espanol
+                révision|                   # french
+                revisione|                  # italian
+                リビジョン|                 # japanese
+                리비전|                     # korean
+                revisjon|                   # norwegian
+                wersja|                     # polish
+                revisão|                    # brazilian portuguese
+                版本                        # simplified chinese
+            )\ (\d+)\)$
             """, re.VERBOSE)
 
     def _do_on_path(self, cb, path, revision=HEAD):
@@ -118,30 +153,32 @@ class SVNTool(SCMTool):
             # SVN expects to have URLs escaped. Take care to only
             # escape the path part of the URL.
             if self.client.is_url(normpath):
-                pathtuple = urlparse.urlsplit(normpath)
+                pathtuple = urlsplit(normpath)
                 path = pathtuple[2]
-                if isinstance(path, unicode):
+                if isinstance(path, six.text_type):
                     path = path.encode('utf-8', 'ignore')
-                normpath = urlparse.urlunsplit((pathtuple[0],
-                                                pathtuple[1],
-                                                urllib.quote(path),
-                                                '',''))
+                normpath = urlunsplit((pathtuple[0],
+                                       pathtuple[1],
+                                       quote(path),
+                                       '', ''))
 
             normrev = self.__normalize_revision(revision)
             return cb(normpath, normrev)
 
-        except ClientError, e:
-            stre = str(e)
+        except ClientError as e:
+            stre = six.text_type(e)
             if 'File not found' in stre or 'path not found' in stre:
-                raise FileNotFoundError(path, revision, str(e))
+                raise FileNotFoundError(path, revision,
+                                        detail=six.text_type(e))
             elif 'callback_ssl_server_trust_prompt required' in stre:
                 raise SCMError(
-                    'HTTPS certificate not accepted.  Please ensure that '
-                    'the proper certificate exists in %s '
-                    'for the user that reviewboard is running as.'
+                    _('HTTPS certificate not accepted.  Please ensure that '
+                      'the proper certificate exists in %s '
+                      'for the user that reviewboard is running as.')
                     % os.path.join(self.config_dir, 'auth'))
             elif 'callback_get_login required' in stre:
-                raise AuthenticationError(msg='Login to the SCM server failed.')
+                raise AuthenticationError(
+                    msg=_('Login to the SCM server failed.'))
             else:
                 raise SCMError(e)
 
@@ -169,18 +206,131 @@ class SVNTool(SCMTool):
 
         return self._do_on_path(get_file_keywords, path, revision)
 
+    def get_branches(self):
+        """Returns a list of branches.
+
+        This assumes the standard layout in the repository."""
+        results = []
+
+        trunk, unused = self.client.list(self.__normalize_path('trunk'),
+                                         dirent_fields=SVN_DIRENT_CREATED_REV,
+                                         recurse=False)[0]
+        results.append(
+            Branch('trunk', six.text_type(trunk['created_rev'].number), True))
+
+        try:
+            branches = self.client.list(
+                self.__normalize_path('branches'),
+                dirent_fields=SVN_DIRENT_CREATED_REV)[1:]
+            for branch, unused in branches:
+                results.append(Branch(
+                    branch['path'].split('/')[-1],
+                    six.text_type(branch['created_rev'].number)))
+        except ClientError:
+            # It's possible there aren't any branches. Ignore errors for this
+            # part.
+            pass
+
+        return results
+
+    def get_commits(self, start):
+        """Return a list of commits."""
+        commits = self.client.log(
+            self.repopath,
+            revision_start=Revision(opt_revision_kind.number,
+                                    int(start)),
+            limit=31)
+
+        results = []
+
+        # We fetch one more commit than we care about, because the entries in
+        # the svn log don't include the parent revision.
+        for i in range(len(commits) - 1):
+            commit = commits[i]
+            parent = commits[i + 1]
+
+            date = datetime.datetime.utcfromtimestamp(commit['date'])
+            results.append(Commit(
+                commit['author'],
+                six.text_type(commit['revision'].number),
+                date.isoformat(),
+                commit['message'],
+                six.text_type(parent['revision'].number)))
+
+        # If there were fewer than 31 commits fetched, also include the last one
+        # in the list so we don't leave off the initial revision.
+        if len(commits) < 31:
+            commit = commits[-1]
+            date = datetime.datetime.utcfromtimestamp(commit['date'])
+            results.append(Commit(
+                commit['author'],
+                six.text_type(commit['revision'].number),
+                date.isoformat(),
+                commit['message']))
+
+        return results
+
+    def get_change(self, revision):
+        """Get an individual change.
+
+        This returns a tuple with the commit message and the diff contents.
+        """
+        cache_key = self.repository.get_commit_cache_key(revision)
+
+        revision = int(revision)
+        head_revision = Revision(opt_revision_kind.number, revision)
+
+        commit = cache.get(cache_key)
+        if commit:
+            message = commit.message
+            author_name = commit.author_name
+            date = commit.date
+            base_revision = Revision(opt_revision_kind.number, commit.parent)
+        else:
+            commits = self.client.log(
+                self.repopath,
+                revision_start=head_revision,
+                limit=2)
+            commit = commits[0]
+            message = commit['message']
+            author_name = commit['author']
+            date = datetime.datetime.utcfromtimestamp(commit['date']).\
+                isoformat()
+
+            try:
+                commit = commits[1]
+                base_revision = commit['revision']
+            except IndexError:
+                base_revision = Revision(opt_revision_kind.number, 0)
+
+        tmpdir = mkdtemp(prefix='reviewboard-svn.')
+
+        diff = self.client.diff(
+            tmpdir,
+            self.repopath,
+            revision1=base_revision,
+            revision2=head_revision,
+            diff_options=['-u'])
+
+        rmtree(tmpdir)
+
+        commit = Commit(author_name, six.text_type(head_revision.number), date,
+                        message, six.text_type(base_revision.number))
+        commit.diff = diff
+        return commit
+
     def normalize_patch(self, patch, filename, revision=HEAD):
         """
-	If using Subversion, we need not only contract keywords in file, but
+        If using Subversion, we need not only contract keywords in file, but
         also in the patch. Otherwise, if a file with expanded keyword somehow
-	ends up in the repository (e.g. by first checking in a file without
-	svn:keywords and then setting svn:keywords in the repository), RB
-	won't be able to apply a patch to such file.
-	"""
+        ends up in the repository (e.g. by first checking in a file without
+        svn:keywords and then setting svn:keywords in the repository), RB
+        won't be able to apply a patch to such file.
+        """
         if revision != PRE_CREATION:
             keywords = self.get_keywords(filename, revision)
 
-	    if keywords:
+            if keywords:
                 return self.collapse_keywords(patch, keywords)
 
         return patch
@@ -214,16 +364,20 @@ class SVNTool(SCMTool):
         return re.sub(r"\$(%s):(:?)([^\$\n\r]*)\$" % '|'.join(keywords),
                       repl, data)
 
-
     def parse_diff_revision(self, file_str, revision_str, *args, **kwargs):
         # Some diffs have additional tabs between the parts of the file
         # revisions
         revision_str = revision_str.strip()
 
-        # The "(revision )" is generated by IntelliJ and has the same
-        # meaning as "(working copy)". See bug 1937.
-        if revision_str in ("(working copy)", "(revision )"):
+        if revision_str == "(working copy)":
             return file_str, HEAD
+
+        # "(revision )" is generated by a few weird tools (like IntelliJ). If
+        # in the +++ line of the diff, it means HEAD, and in the --- line, it
+        # means PRE_CREATION. Since the more important use case is parsing the
+        # source revision, we treat it as a new file. See bugs 1937 and 2632.
+        if revision_str == "(revision )":
+            return file_str, PRE_CREATION
 
         # Binary diffs don't provide revision information, so we set a fake
         # "(unknown)" in the SVNDiffParser. This will never actually appear
@@ -251,7 +405,6 @@ class SVNTool(SCMTool):
 
         return file_str, revision
 
-
     def get_filenames_in_revision(self, revision):
         r = self.__normalize_revision(revision)
         logs = self.client.log(self.repopath, r, r, True)
@@ -265,8 +418,8 @@ class SVNTool(SCMTool):
 
     def get_repository_info(self):
         try:
-            info = self.client.info2( self.repopath, recurse=False )
-        except ClientError, e:
+            info = self.client.info2(self.repopath, recurse=False)
+        except ClientError as e:
             raise SCMError(e)
 
         return {
@@ -281,7 +434,7 @@ class SVNTool(SCMTool):
         elif revision == PRE_CREATION:
             raise FileNotFoundError('', revision)
         else:
-            r = Revision(opt_revision_kind.number, str(revision))
+            r = Revision(opt_revision_kind.number, six.text_type(revision))
 
         return r
 
@@ -301,14 +454,15 @@ class SVNTool(SCMTool):
     def get_parser(self, data):
         return SVNDiffParser(data)
 
-    def _ssl_server_trust_prompt(self, trust_dict):
+    @classmethod
+    def _ssl_server_trust_prompt(cls, trust_dict, repository):
         """Callback for SSL cert verification.
 
         This will be called when accessing a repository with an SSL cert.
         We will look up a matching cert in the database and see if it's
         accepted.
         """
-        saved_cert = self.repository.extra_data.get('cert', {})
+        saved_cert = repository.extra_data.get('cert', {})
         cert = trust_dict.copy()
         del cert['failures']
 
@@ -345,11 +499,11 @@ class SVNTool(SCMTool):
             info = client.info2(path, recurse=False)
             logging.debug('SVN: Got repository information for %s: %s' %
                           (path, info))
-        except ClientError, e:
+        except ClientError as e:
             logging.error('SVN: Failed to get repository information '
                           'for %s: %s' % (path, e))
 
-            if 'callback_get_login required' in str(e):
+            if 'callback_get_login required' in six.text_type(e):
                 raise AuthenticationError(msg="Authentication failed")
 
             if cert_data:
@@ -384,7 +538,7 @@ class SVNTool(SCMTool):
             raise RepositoryNotFoundError()
 
     @classmethod
-    def accept_certificate(cls, path, local_site_name=None):
+    def accept_certificate(cls, path, local_site_name=None, certificate=None):
         """Accepts the certificate for the given repository path."""
         cert = {}
 
@@ -418,24 +572,23 @@ class SVNTool(SCMTool):
         client = pysvn.Client(config_dir)
 
         if username:
-            client.set_default_username(str(username))
+            client.set_default_username(six.text_type(username))
 
         if password:
-            client.set_default_password(str(password))
+            client.set_default_password(six.text_type(password))
 
         return config_dir, client
 
     @classmethod
     def _create_subversion_dir(cls, config_dir):
         try:
-            os.mkdir(config_dir, 0700)
+            os.mkdir(config_dir, 0o700)
         except OSError:
-            raise IOError(_("Unable to create directory %(dirname)s, "
-                            "which is needed for the Subversion "
-                            "configuration. Create this directory and set "
-                            "the web server's user as the the owner.") % {
-                'dirname': config_dir,
-            })
+            raise IOError(
+                _("Unable to create directory %(dirname)s, which is needed "
+                  "for the Subversion configuration. Create this directory "
+                  "and set the web server's user as the the owner.")
+                % {'dirname': config_dir})
 
     @classmethod
     def _prepare_local_site_config_dir(cls, local_site_name):
@@ -449,10 +602,9 @@ class SVNTool(SCMTool):
         if not os.path.exists(config_dir):
             cls._create_subversion_dir(config_dir)
 
-            fp = open(os.path.join(config_dir, 'config'), 'w')
-            fp.write('[tunnels]\n')
-            fp.write('ssh = rbssh --rb-local-site=%s\n' % local_site_name)
-            fp.close()
+            with open(os.path.join(config_dir, 'config'), 'w') as fp:
+                fp.write('[tunnels]\n')
+                fp.write('ssh = rbssh --rb-local-site=%s\n' % local_site_name)
 
         return config_dir
 

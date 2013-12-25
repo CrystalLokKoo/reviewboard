@@ -1,22 +1,23 @@
-{% load i18n %}
-{% load difftags %}
-{% load djblets_deco %}
-{% load djblets_utils %}
-{% load static %}
+{% load difftags i18n djblets_deco djblets_utils reviewtags static %}
+
 {% if standalone and error %}
 {{error}}
 {% endif %}
 
 {% definevar 'line_fmt' %}
-  <tr line="%(linenum_row)s"%(class_attr)s>
+  <tr line="%(linenum_row)s"%(row_class_attr)s>
+{%  if not file.is_new_file %}
    <th>%(anchor_html)s%(linenum1)s</th>
-   <td>%(moved_from_html)s
+   <td%(cell_1_class_attr)s>
+    %(moved_to_html)s
     %(begin_collapse_html)s
     <pre>%(line1)s</pre>
     %(end_collapse_html)s
    </td>
+{%  endif %}
    <th>%(linenum2)s</th>
-   <td>%(moved_to_html)s
+   <td%(cell_2_class_attr)s>
+    %(moved_from_html)s
     <pre>%(line2)s</pre>
    </td>
   </tr>
@@ -27,7 +28,11 @@
 {% enddefinevar %}
 
 {% definevar 'begin_collapse_fmt' %}
- <div><img src="{% static "rb/images/diff-collapse.png" %}" width="14" height="14" alt="{% trans "Collapse lines" %}" title="{% trans "Collapse lines" %}" class="diff-collapse-btn" onclick="javascript:RB.expandChunk('{{base_url}}', 'file{{file.index}}', '{{file.filediff.pk}}', '{{file.filediff.diffset.revision}}', {% if file.interfilediff %}'{{file.interfilediff.diffset.revision}}'{% else %}null{% endif %}, '{{file.index}}', '%(chunk_index)s', 0, this); return false;" />
+ <div class="collapse-floater">
+  <div class="diff-collapse-btn" title="{% trans "Collapse lines" %}"
+       data-chunk-index="%(chunk_index)s" data-lines-of-context="0">
+   <div class="rb-icon rb-icon-diff-collapse-chunk"></div>
+  </div>
 {% enddefinevar %}
 
 {% definevar 'end_collapse_fmt' %}
@@ -35,41 +40,132 @@
 {% enddefinevar %}
 
 {% definevar 'moved_fmt' %}
- <a href="#" class="%(class)s" line="%(line)s" target="%(target)s">%(text)s</a>
+ <a href="#" class="%(class)s" data-line="%(line)s" target="%(target)s">%(text)s</a>
 {% enddefinevar %}
 
 {% if file.changed_chunk_indexes or file.binary or file.deleted or file.moved %}
 {%  if not standalone %}
-<table class="sidebyside{% if not file.interfilediff and file.newfile and not file.filediff.parent_diff %} newfile{% endif %}" id="file{{file.filediff.id}}">
+<table id="file{{file.filediff.id}}" class="{% spaceless %}
+  sidebyside
+  {% if file.is_new_file %}newfile{% endif %}
+  {% if file.binary %}diff-binary{% endif %}
+  {% if file.deleted %}diff-deleted{% endif %}
+  {% endspaceless %}"
+       data-lines-equal="{{equal_lines}}">
  <colgroup>
+{% if not file.is_new_file %}
   <col class="line" />
   <col class="left" />
+{% endif %}
   <col class="line" />
   <col class="right" />
  </colgroup>
  <thead>
-  <tr onClick="gotoAnchor('{{file.index}}');">
+  <tr class="filename-row">
 {%   if file.dest_filename == file.depot_filename %}
-   <th colspan="4"><a name="{{file.index}}" class="file-anchor"></a>{{ file.depot_filename }}</th>
+   <th colspan="4">
+    <a name="{{file.index}}" class="file-anchor"></a>
+{%    if file.binary %}
+{%     if modified_diff_file_attachment %}
+    <img class="header-file-icon" src="{{modified_diff_file_attachment.icon_url}}" />
+{%     elif orig_diff_file_attachment %}
+    <img class="header-file-icon" src="{{orig_diff_file_attachment.icon_url}}" />
+{%     endif %}
+{%    endif %}
+    {{file.depot_filename}}
+  </th>
 {%   else %}
+{%    if not file.is_new_file %}
    <th colspan="2"><a name="{{file.index}}" class="file-anchor"></a>{{ file.depot_filename }}</th>
+{%    endif %}
    <th colspan="2">{{ file.dest_filename }}{% if file.moved %}{% trans " (moved)" %}{% endif %}</th>
 {%   endif %}{# file.dest_filename == file.depot_filename #}
   </tr>
-  <tr>
+  <tr class="revision-row">
 {%   if file.moved and file.num_changes == 0 %}
-   <th colspan="4" class="rev">{% trans "No changes were made to this file." %}</th>
+   <th colspan="4"></th>
 {%   else %}
-   <th colspan="2" class="rev">{{file.revision}}</th>
-   <th colspan="2" class="rev">{{file.dest_revision}}</th>
+{%    if not file.is_new_file %}
+   <th></th>
+   <th>{{file.revision}}</th>
+{%    endif %}
+   <th></th>
+   <th>{{file.dest_revision}}</th>
 {%   endif %}{# num_changes and moved #}
   </tr>
  </thead>
 {%  endif %}{# not standalone #}
 {%  if file.binary %}
- <tbody class="binary">
+ <tbody class="binary" data-file-id="{{modified_diff_file_attachment.id}}">
+{%   if orig_diff_file_attachment or modified_diff_file_attachment %}
+  <tr class="inline-actions-header">
+{%    if file.moved and file.num_changes == 0 or file.newfile and not orig_diff_file_attachment %}
+   <td colspan="4">
+{%    else %}
+   <td colspan="2">
+    <div class="inline-actions-container clearfix">
+     <ul class="actions inline-actions-left">
+{%     if orig_diff_file_attachment %}
+      <li class="download"><a href="{{orig_diff_file_attachment.get_absolute_url}}">{% trans "Download" %}</a></li>
+{%     endif %}
+     </ul>
+    </div>
+   </td>
+   <td colspan="2">
+{%    endif %}
+    <div class="inline-actions-container clearfix">
+     <ul class="actions inline-actions-right">
+{%   if modified_diff_file_attachment %}
+      <li><a href="{{modified_diff_file_attachment.get_absolute_url}}">{% trans "Download" %}</a></li>
+{%    if not modified_attachment_review_ui_html and not diff_attachment_review_ui_html %}
+{%     if modified_diff_file_attachment.review_ui %}
+      <li class="file-review"><a href="{% url 'file_attachment' modified_diff_file_attachment.get_review_request.display_id modified_diff_file_attachment.pk %}">{% trans "Review" %}</a></li>
+{%     else %}
+      <li class="file-add-comment"><a href="#">{% trans "New Comment" %}</a></li>
+{%     endif %}
+{%    endif %}
+{%   endif %}
+     </ul>
+    </div>
+  </tr>
+{%   endif %}
+  <tr class="inline-files-container">
+{%   if diff_attachment_review_ui_html %}
+  <td colspan="4" class="diff-review-ui">{{diff_attachment_review_ui_html}}</td>
+{%   else %}
+{%    if file.moved and file.num_changes == 0 or file.newfile and not orig_diff_file_attachment %}
+   <td colspan="4">
+{%    else %}
+   <td colspan="2">
+{%     if not orig_diff_file_attachment %}
+{%      trans "This is a binary file. The content cannot be displayed." %}
+{%     elif orig_attachment_review_ui_html %}
+{{      orig_attachment_review_ui_html}}
+{%     elif orig_diff_file_attachment.thumbnail %}
+    <div class="file-thumbnail-container">{{orig_diff_file_attachment.thumbnail}}</div>
+{%     else %}
+{%      trans "No preview available." %}
+{%     endif %}
+   </td>
+   <td colspan="2">
+{%    endif %}
+{%    if not modified_diff_file_attachment %}
+{%     trans "This is a binary file. The content cannot be displayed." %}
+{%    elif modified_attachment_review_ui_html %}
+{{     modified_attachment_review_ui_html}}
+{%    elif modified_diff_file_attachment.thumbnail %}
+    <div class="file-thumbnail-container">{{modified_diff_file_attachment.thumbnail}}</div>
+{%    else %}
+{%     trans "No preview available." %}
+{%    endif %}
+{%   endif %}
+   </td>
+  </tr>
+ </tbody>
+{%  elif file.moved and file.num_changes == 0 %}
+ <tbody class="no-changes">
   <tr>
-   <td colspan="4">{% trans "This is a binary file. The content cannot be displayed." %}</td>
+   <td colspan="4">{% trans "No changes were made to this file." %}</td>
   </tr>
  </tbody>
 {%  elif file.deleted %}
@@ -78,13 +174,14 @@
    <td colspan="4">{% trans "This file was deleted. The content cannot be displayed." %}</td>
   </tr>
  </tbody>
-{%  elif file.whitespace_only %}
-    <tbody class="whitespace-file">
-     <tr>
-      <td colspan="4">{% trans "This file contains only whitespace changes." %}</td>
-     </tr>
-    </tbody>
 {%  else %}
+{%   if file.whitespace_only %}
+ <tbody class="whitespace-file">
+  <tr>
+   <td colspan="4">{% trans "This file contains only whitespace changes." %}</td>
+  </tr>
+ </tbody>
+{%   endif %}
 {%   for chunk in file.chunks %}
 {%    if not chunk.collapsable or not collapseall %}
  <tbody id="chunk{{file.index}}.{{chunk.index}}"{% attr "class" %}{% if chunk.change != "equal" %}{{chunk.change}}{% if chunk.meta.whitespace_chunk%} whitespace-chunk{% endif %}{% else %}{% if chunk.collapsable %} collapsable{% endif %}{% endif %}{% if standalone %} loaded{% endif %}{% endattr %}>
@@ -99,7 +196,7 @@
 {% endif %}
    </th>
    <td colspan="3">
-    {% definevar 'expand_text' %}{{chunk.numlines}} line{{chunk.numlines|pluralize}}{% enddefinevar %}
+    {% definevar 'expand_text' %}{% blocktrans count lines=chunk.numlines %}{{lines}} line{% plural %}{{lines}} lines{% endblocktrans %}{% enddefinevar %}
     {% diff_expand_link 'all' _('Show all lines') 0 0 expand_text %}
    </td>
   </tr>
@@ -111,7 +208,11 @@
    <td colspan="3">{% diff_chunk_header chunk.meta.headers.0 %}</td>
 {%    else %}
    <td>{% diff_chunk_header chunk.meta.headers.0 %}</td>
-   <td colspan="2">{% diff_chunk_header chunk.meta.headers.1 %}</td>
+   <td colspan="2">
+{%     if chunk.meta.headers.1 %}
+{%      diff_chunk_header chunk.meta.headers.1 %}
+{%     endif %}
+   </td>
 {%    endif %}
 {%   else %}
    <td colspan="3"></td>
@@ -124,20 +225,5 @@
 {%     endif %}{# file deleted, binary and whitespace_only #}
 {%  if not standalone %}
 </table>
-<script type="text/javascript">
-  $(document).ready(function() {
-    /* Add to the change index. */
-    $("li.change_file_{{file.index}}").html(
-      {% include_as_string "diffviewer/changeindex_entry.html" %});
-  });
-</script>
-{%  endif %}{# not standalone #}
-{% else %}{# No changed chunks and not a binary file #}
-{%  if not standalone %}
-<script type="text/javascript">
-  $(document).ready(function() {
-    $("li.change_file_{{file.index}}").remove();
-  });
-</script>
 {%  endif %}{# not standalone #}
 {% endif %}{# No changed chunks and not a binary file #}

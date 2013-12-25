@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
+from __future__ import unicode_literals
+
 import os
 import sys
 
-from django.core.management import call_command, setup_environ
+from django.core.management import call_command
 
 
 if __name__ == '__main__':
@@ -12,9 +14,7 @@ if __name__ == '__main__':
     sys.path.insert(0, os.path.join(scripts_dir, 'conf'))
 
     os.putenv('FORCE_BUILD_MEDIA', '1')
-
-    import reviewboard.settings
-    setup_environ(reviewboard.settings)
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'reviewboard.settings')
 
     ret = call_command('collectstatic', interactive=False, verbosity=2)
     sys.exit(ret)
