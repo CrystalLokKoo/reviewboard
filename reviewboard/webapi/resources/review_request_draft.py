@@ -139,7 +139,7 @@ class ReviewRequestDraftResource(MarkdownFieldsMixin, WebAPIResource):
         if not review_request.is_mutable_by(request.user):
             raise PermissionDenied
 
-        return ReviewRequestDraft.create(review_request)
+        return ReviewRequestDraft.create(review_request, request.user)
 
     def get_queryset(self, request, *args, **kwargs):
         review_request = resources.review_request.get_object(

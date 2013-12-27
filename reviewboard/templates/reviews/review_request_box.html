@@ -46,18 +46,13 @@
   </thead>
   <tbody>
   <tr>
-   <td class="label"><label for="owner">{% trans "Owner" %}:</label></td>
-   <td class="value"><span id="owner" class="editable">
+   <th><label for="owner">{% trans "Owner" %}:</label></th>
+   <td><span id="owner" class="editable">
 {% if review_request.owner %}
     <a class="user" href="{% url user review_request.owner %}">{{review_request.owner}}</a></span>
 {% endif %}
    </td>
-   <td class="caption" colspan="2">
-    {% trans "Reviewers" %}
-{% if can_edit_review_request %}
-    <span class="required-flag">*</span>
-{% endif %}    
-  </tr>    
+  </tr>
    <tr>
     <th><label for="submitter">{% trans "Submitter" %}:</label></th>
     <td><span><a id="submitter" class="user" href="{% url 'user' review_request.submitter %}">{{review_request.submitter|user_displayname}}</a></span></td>
@@ -117,7 +112,7 @@
    <tr>
     <th colspan="2">{% trans "Reviewers" %}
 {% if review_request.status == 'P' %}
-{%  if request.user == review_request.submitter or perms.reviews.can_edit_reviewrequest %}
+{%  if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
      <span class="required-flag" aria-label="{% trans 'This field is required' %}" title="{% trans 'This field is required' %}">*</span>
 {%  endif %}
 {% endif %}
