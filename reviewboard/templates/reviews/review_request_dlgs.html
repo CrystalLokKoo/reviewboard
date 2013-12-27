@@ -2,7 +2,7 @@
 {% load djblets_utils %}
 {% load i18n %}
 
-{% if can_edit_review_request %}
+{% if mutable_by_user %}
 <script type="text/javascript">
   $(document).ready(function() {
 {%  if upload_diff_form %}

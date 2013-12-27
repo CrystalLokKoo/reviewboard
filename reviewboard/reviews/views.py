@@ -724,7 +724,6 @@ def review_detail(request,
                              if not file_attachment.is_from_diff],
         'all_file_attachments': file_attachments,
         'screenshots': screenshots,
-        'can_edit_review_request': review_request.is_mutable_by(request.user),
     })
 
     response = render_to_response(template_name,

@@ -30,6 +30,10 @@
                     url: "{{user.get_absolute_url}}"
                 }{% if not forloop.last %},{% endif %}
 {% endfor %}{% endspaceless %}],
+            owner: {
+                name: "{{review_request.owner.username|escapejs}}",
+                url: "{{review_request.owner.get_absolute_url}}"
+            },
             testingDone: "{{review_request_details.testing_done|escapejs}}"
         },
         editorData: {

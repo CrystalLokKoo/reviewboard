@@ -124,6 +124,7 @@ class ReviewRequestManager(ConcurrencyManager):
 
         review_request = super(ReviewRequestManager, self).create(
             submitter=user,
+            owner=user,
             status='P',
             public=False,
             repository=repository,

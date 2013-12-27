@@ -4,7 +4,7 @@
 {% if review_request.status == 'S' %}
  <div class="banner" id="submitted-banner">
   <h1>{% trans "This change has been marked as submitted." %}</h1>
-{%  if can_edit_review_request or perms.reviews.can_change_status %}
+{%  if mutable_by_user or perms.reviews.can_change_status %}
   <input type="submit" id="btn-review-request-reopen"
          value="{% trans "Reopen for Review" %}" />
   <p><label for="changedescription">{% trans "Describe the submission (optional):" %}</label></p>
@@ -16,11 +16,11 @@
 {% elif review_request.status == 'D' %}
  <div class="banner" id="discard-banner">
   <h1>{% trans "This change has been discarded." %}</h1>
-{%  if can_edit_review_request %}
+{%  if mutable_by_user %}
   <input type="submit" id="btn-review-request-reopen"
          value="{% trans "Reopen for Review" %}" />
 {%  endif %}
-{%  if can_edit_review_request or perms.reviews.can_change_status %}
+{%  if mutable_by_user or perms.reviews.can_change_status %}
   <p><label for="changedescription">{% trans "Describe the reason it's discarded (optional):" %}</label></p>
   <pre id="changedescription" class="editable{% if close_description_rich_text and close_description %} loading{% endif %}" data-rich-text="{{close_description_rich_text|yesno:'true,false'}}">{{close_description}}</pre>
 {%  elif close_description %}
@@ -28,7 +28,7 @@
 {%  endif %}
  </div>
 {% elif draft %}{# pending review #}
-{%  if can_edit_review_request or perms.reviews.can_edit_reviewrequest %}
+{%  if mutable_by_user or perms.reviews.can_edit_reviewrequest %}
  <div class="banner" id="draft-banner" style="display:none;">
 {%   if review_request.public %}
   <h1>{% trans "This review request is a draft." %}</h1>
@@ -56,7 +56,7 @@
 {% endif %}
 </div>
 
-{% if can_edit_review_request and review_request.status == 'P'%}
+{% if mutable_by_user and review_request.status == 'P'%}
 {%  if draft or not review_request.public %}
 <script type="text/javascript">
   $("#draft-banner").show();
